@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest something Layer should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Layer is deliberately small. A well-argued feature can still be declined
+        for scope — opening this before writing the code is the point.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Layer makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like Layer to do
+      description: Describe the behavior, not the implementation, unless the implementation is the point.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, or handling it outside Layer.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy impact
+      description: >-
+        Layer holds an API key and can capture the screen. Please say whether
+        this feature would change that.
+      options:
+        - label: >-
+            This would widen what Layer captures, monitors, stores, or sends off
+            the machine (explain above).
+        - label: I have read the "Privacy and permissions" section of the README.

@@ -1,0 +1,21 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+# The workflow only reads the repository; it never writes back to it.
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      # Actions are pinned to a commit SHA rather than a floating tag so a
+      # retagged upstream release cannot silently change what CI runs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Build app bundle
+        run: make build
+      - name: Run tests
+        run: swift test

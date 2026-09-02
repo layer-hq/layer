@@ -1,0 +1,18 @@
+# Build output
+.build/
+.swiftpm/
+DerivedData/
+
+# Xcode user state
+*.xcuserdatad
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Secrets and signing material — never commit these
+.env
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision

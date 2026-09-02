@@ -1,0 +1,79 @@
+name: Bug report
+description: Something in Layer does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Not for security or privacy vulnerabilities.** If the bug could
+        disclose your API key, or captures or sends screen content you did not
+        intend to send, close this and report it privately —
+        see [SECURITY.md](../../SECURITY.md).
+
+
+        **Careful with attachments.** Screenshots of Layer often contain
+        whatever else was on your screen, and its requests contain your API key.
+        Redact before you upload.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Notch with ...
+        2. Enable Take screen context
+        3. Submit a prompt
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "14.5 (23F79)"
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Layer build
+      description: The commit you built from — `git rev-parse --short HEAD`.
+      placeholder: cc9460b
+    validations:
+      required: true
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Display setup
+      description: Layer positions itself under the notch, so this matters.
+      options:
+        - MacBook with a notch, built-in display only
+        - MacBook with a notch, plus external displays
+        - No notched display
+    validations:
+      required: true
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions granted in System Settings → Privacy & Security
+      options:
+        - label: Screen Recording
+        - label: Input Monitoring
+  - type: checkboxes
+    id: screen-context
+    attributes:
+      label: Was Take screen context enabled when this happened?
+      options:
+        - label: Yes — screen context was on
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output or error text
+      description: Anything Layer printed, or the error it showed. Redact your API key.
+      render: text
