@@ -25,6 +25,7 @@ private struct ControlTrayHeightPreferenceKey: PreferenceKey {
 struct NotchView: View {
     @Environment(\.openSettings) private var openSettings
     @ObservedObject var session: NotchSession
+    @ObservedObject var voiceMode: VoiceModeController
     let topInset: CGFloat
     let expandedWidth: CGFloat
     let promptFocusRequests: AnyPublisher<Void, Never>
@@ -73,6 +74,7 @@ struct NotchView: View {
                 onContentHeightChange(height)
             }
             .animation(.easeOut(duration: 0.15), value: isExpanded)
+            .animation(.easeOut(duration: 0.15), value: voiceMode.state)
         }
     }
 
@@ -87,6 +89,33 @@ struct NotchView: View {
 
                 Spacer()
 
+                if let label = voiceMode.state.label {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    voiceMode.toggle()
+                } label: {
+                    if voiceMode.state == .connecting {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 18, height: 18)
+                            .padding(7)
+                    } else {
+                        Image(systemName: voiceMode.isActive ? "mic.fill" : "mic")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 18, height: 18)
+                            .padding(7)
+                    }
+                }
+                .buttonStyle(.automatic)
+                .help(voiceMode.isActive ? "Stop voice mode" : "Start voice mode")
+                .accessibilityLabel(
+                    voiceMode.isActive ? "Stop voice mode" : "Start voice mode"
+                )
+
                 Button(action: showSettings) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 16, weight: .medium))
@@ -99,17 +128,11 @@ struct NotchView: View {
             }
 
             if let notice = session.notice {
-                WarningBanner(message: notice.message) {
-                    if notice.recovery == .screenRecordingSettings {
-                        Button("System Settings", action: openScreenRecordingSettings)
-                            .controlSize(.small)
-                    }
+                noticeBanner(notice) { session.notice = nil }
+            }
 
-                    Button("Dismiss") {
-                        session.notice = nil
-                    }
-                    .controlSize(.small)
-                }
+            if let notice = voiceMode.notice {
+                noticeBanner(notice) { voiceMode.dismissNotice() }
             }
 
             if apiKey.isEmpty {
@@ -123,7 +146,7 @@ struct NotchView: View {
 
             PromptField(
                 text: $prompt,
-                shouldFocus: isExpanded,
+                shouldFocus: isExpanded && !voiceMode.isActive,
                 focusRequests: promptFocusRequests,
                 onSubmit: { submittedPrompt in
                     let trimmedPrompt = submittedPrompt.trimmingCharacters(
@@ -134,6 +157,7 @@ struct NotchView: View {
                     onSubmitPrompt(trimmedPrompt, takeScreenContext)
                 }
             )
+            .disabled(voiceMode.isActive)
 
             HStack(spacing: 12) {
                 Toggle("Take screen context", isOn: $takeScreenContext)
@@ -163,5 +187,30 @@ struct NotchView: View {
     private func showSettings() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         openSettings()
+    }
+
+    @ViewBuilder
+    private func noticeBanner(
+        _ notice: Notice,
+        dismiss: @escaping () -> Void
+    ) -> some View {
+        WarningBanner(message: notice.message) {
+            switch notice.recovery {
+            case .screenRecordingSettings:
+                Button("System Settings", action: openScreenRecordingSettings)
+                    .controlSize(.small)
+            case .microphoneSettings:
+                Button("System Settings", action: openMicrophoneSettings)
+                    .controlSize(.small)
+            case .settings:
+                Button("Open Settings", action: showSettings)
+                    .controlSize(.small)
+            case nil:
+                EmptyView()
+            }
+
+            Button("Dismiss", action: dismiss)
+                .controlSize(.small)
+        }
     }
 }

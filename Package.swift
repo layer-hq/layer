@@ -17,14 +17,16 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
-        .package(url: "https://github.com/JohnSundell/Splash", from: "0.16.0")
+        .package(url: "https://github.com/JohnSundell/Splash", from: "0.16.0"),
+        .package(url: "https://github.com/stasel/WebRTC.git", from: "152.0.0")
     ],
     targets: [
         .executableTarget(
             name: "Layer",
             dependencies: [
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
-                .product(name: "Splash", package: "Splash")
+                .product(name: "Splash", package: "Splash"),
+                .product(name: "WebRTC", package: "WebRTC")
             ],
             path: "Sources/Layer",
             resources: [

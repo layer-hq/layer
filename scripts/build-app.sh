@@ -20,10 +20,18 @@ fi
 swift build --package-path "$ROOT_DIR" --triple arm64-apple-macosx -c "$CONFIGURATION"
 
 rm -rf "$APP_DIR"
-mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
+mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$CONTENTS_DIR/Frameworks"
 cp "$BUILD_DIR/$CONFIGURATION/Layer" "$CONTENTS_DIR/MacOS/Layer"
 cp "$ROOT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 cp "$ROOT_DIR/Resources/Layer.icns" "$CONTENTS_DIR/Resources/Layer.icns"
+
+WEBRTC_FRAMEWORK="$BUILD_DIR/$CONFIGURATION/WebRTC.framework"
+if [[ -d "$WEBRTC_FRAMEWORK" ]]; then
+  cp -R "$WEBRTC_FRAMEWORK" "$CONTENTS_DIR/Frameworks/"
+  install_name_tool \
+    -add_rpath "@executable_path/../Frameworks" \
+    "$CONTENTS_DIR/MacOS/Layer"
+fi
 
 RESOURCE_BUNDLE="$BUILD_DIR/$CONFIGURATION/Layer_Layer.bundle"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then
@@ -43,9 +51,18 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
   SIGNING_IDENTITY="-"
 fi
 
+if [[ -d "$CONTENTS_DIR/Frameworks/WebRTC.framework" ]]; then
+  codesign \
+    --force \
+    --options runtime \
+    --sign "$SIGNING_IDENTITY" \
+    "$CONTENTS_DIR/Frameworks/WebRTC.framework"
+fi
+
 codesign \
   --force \
   --options runtime \
+  --entitlements "$ROOT_DIR/Resources/Layer.entitlements" \
   --sign "$SIGNING_IDENTITY" \
   "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"

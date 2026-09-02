@@ -24,6 +24,7 @@ final class NotchPanel: OverlayPanel {
     private var escapeKeyMonitor: EscapeKeyMonitor?
     private let promptFocusRequests = PassthroughSubject<Void, Never>()
     private let session = NotchSession()
+    private let voiceMode = VoiceModeController()
     private let onSelect: () -> Void
     private let onSubmitPrompt: (String, Bool) -> Void
 
@@ -42,6 +43,9 @@ final class NotchPanel: OverlayPanel {
         hasShadow = true
         escapeKeyMonitor = EscapeKeyMonitor { [weak self] window in
             guard let self, window === self else { return false }
+            if voiceMode.isActive {
+                voiceMode.stop()
+            }
             setExpanded(false)
             return true
         }
@@ -60,10 +64,12 @@ final class NotchPanel: OverlayPanel {
 
         let layout = makeLayout(for: screen)
         currentLayout = layout
-        session.isExpanded = false
+        let voiceActive = voiceMode.isActive
+        session.isExpanded = voiceActive
         contentViewController = NSHostingController(
             rootView: NotchView(
                 session: session,
+                voiceMode: voiceMode,
                 topInset: layout.obscuredHeight,
                 expandedWidth: layout.expandedSize.width,
                 promptFocusRequests: promptFocusRequests.eraseToAnyPublisher(),
@@ -84,7 +90,17 @@ final class NotchPanel: OverlayPanel {
                 }
             )
         )
-        setFrame(frame(for: layout.collapsedSize, on: screen), display: true)
+        setFrame(
+            frame(
+                for: voiceActive ? layout.expandedSize : layout.collapsedSize,
+                on: screen
+            ),
+            display: true
+        )
+    }
+
+    func stopVoice() {
+        voiceMode.stop()
     }
 
     func invoke(notice: Notice? = nil) {
@@ -143,6 +159,9 @@ final class NotchPanel: OverlayPanel {
     }
 
     private func setExpanded(_ expanded: Bool) {
+        if !expanded && voiceMode.isActive {
+            return
+        }
         guard expanded != isExpanded, let layout = currentLayout else { return }
         session.isExpanded = expanded
 

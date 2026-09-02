@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        notchPanel?.stopVoice()
         NotificationCenter.default.removeObserver(self)
         selectionShortcut?.invalidate()
         if let localShortcutMonitor {

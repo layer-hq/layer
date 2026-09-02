@@ -92,7 +92,7 @@ struct ChatView: View {
                     Button("System Settings") {
                         onOpenScreenRecordingSettings()
                     }
-                } else {
+                } else if notice.recovery == .settings {
                     SettingsLink {
                         Text("Settings")
                     }
