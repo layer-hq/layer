@@ -15,6 +15,13 @@ struct InvocationShortcutTests {
         #expect(GlobalSelectionShortcut.carbonModifiers(
             from: [.control, .option]
         ) == UInt32(controlKey | optionKey))
+        #expect(
+            VoiceShortcutPreferences.defaultModifiers == [.command, .shift]
+        )
+        #expect(GlobalSelectionShortcut.carbonModifiers(
+            from: VoiceShortcutPreferences.defaultModifiers
+        ) == UInt32(cmdKey | shiftKey))
+        #expect(VoiceShortcutPreferences.defaultKeyCode == UInt32(kVK_ANSI_M))
     }
 
     @Test

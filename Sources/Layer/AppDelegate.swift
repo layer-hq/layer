@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let screenContextAcquisition = ScreenContextAcquisition()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
+    private var voiceShortcut: GlobalSelectionShortcut?
     private var localShortcutMonitor: Any?
     private var globalShortcutMonitor: Any?
 
@@ -17,14 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.setActivationPolicy(.regular)
         InvocationShortcutPreferences.registerDefaults()
         SelectionShortcutPreferences.registerDefaults()
+        VoiceShortcutPreferences.registerDefaults()
         startInvocationShortcutMonitoring()
-        selectionShortcut = GlobalSelectionShortcut { [weak self] in
+        selectionShortcut = GlobalSelectionShortcut(id: 1) { [weak self] in
             self?.beginSelection()
         }
-        updateSelectionShortcut()
+        voiceShortcut = GlobalSelectionShortcut(id: 2) { [weak self] in
+            self?.toggleVoice()
+        }
+        updateRegisteredShortcuts()
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(updateSelectionShortcut),
+            selector: #selector(updateRegisteredShortcuts),
             name: UserDefaults.didChangeNotification,
             object: nil
         )
@@ -46,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notchPanel?.stopVoice()
         NotificationCenter.default.removeObserver(self)
         selectionShortcut?.invalidate()
+        voiceShortcut?.invalidate()
         if let localShortcutMonitor {
             NSEvent.removeMonitor(localShortcutMonitor)
         }
@@ -98,12 +104,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func updateSelectionShortcut() {
+    @objc private func updateRegisteredShortcuts() {
         selectionShortcut?.register(
             keyCode: SelectionShortcutPreferences.keyCode,
             modifiers: SelectionShortcutPreferences.modifiers,
             enabled: SelectionShortcutPreferences.isEnabled
         )
+        voiceShortcut?.register(
+            keyCode: VoiceShortcutPreferences.keyCode,
+            modifiers: VoiceShortcutPreferences.modifiers,
+            enabled: VoiceShortcutPreferences.isEnabled
+        )
+    }
+
+    private func toggleVoice() {
+        let panel = notchPanel ?? makeNotchPanel()
+        panel.toggleVoice()
     }
 
     private func makeNotchPanel() -> NotchPanel {

@@ -85,13 +85,51 @@ enum SelectionShortcutPreferences {
     }
 }
 
+enum VoiceShortcutPreferences {
+    static let isEnabledKey = "voiceShortcutEnabled"
+    static let modifierFlagsKey = "voiceShortcutModifierFlags"
+    static let characterKey = "voiceShortcutCharacter"
+    static let keyCodeKey = "voiceShortcutKeyCode"
+    static let defaultModifiers: NSEvent.ModifierFlags = [.command, .shift]
+    static let defaultKeyCode = UInt32(kVK_ANSI_M)
+
+    static func registerDefaults() {
+        UserDefaults.standard.register(defaults: [
+            isEnabledKey: true,
+            modifierFlagsKey: Int(defaultModifiers.rawValue),
+            characterKey: "M",
+            keyCodeKey: Int(defaultKeyCode)
+        ])
+    }
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: isEnabledKey)
+    }
+
+    static var modifiers: NSEvent.ModifierFlags {
+        NSEvent.ModifierFlags(
+            rawValue: UInt(UserDefaults.standard.integer(forKey: modifierFlagsKey))
+        )
+    }
+
+    static var character: String {
+        UserDefaults.standard.string(forKey: characterKey) ?? "M"
+    }
+
+    static var keyCode: UInt32 {
+        UInt32(UserDefaults.standard.integer(forKey: keyCodeKey))
+    }
+}
+
 @MainActor
 final class GlobalSelectionShortcut {
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
+    private let hotKeyID: UInt32
     private let action: @MainActor () -> Void
 
-    init(action: @escaping @MainActor () -> Void) {
+    init(id: UInt32, action: @escaping @MainActor () -> Void) {
+        self.hotKeyID = id
         self.action = action
 
         var eventType = EventTypeSpec(
@@ -100,15 +138,33 @@ final class GlobalSelectionShortcut {
         )
         InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, userData in
-                guard let userData else { return OSStatus(eventNotHandledErr) }
-                MainActor.assumeIsolated {
+            { _, event, userData in
+                guard let event, let userData else {
+                    return OSStatus(eventNotHandledErr)
+                }
+                var pressed = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &pressed
+                )
+                guard status == noErr else {
+                    return OSStatus(eventNotHandledErr)
+                }
+                return MainActor.assumeIsolated {
                     let shortcut = Unmanaged<GlobalSelectionShortcut>
                         .fromOpaque(userData)
                         .takeUnretainedValue()
+                    guard pressed.id == shortcut.hotKeyID else {
+                        return OSStatus(eventNotHandledErr)
+                    }
                     shortcut.action()
+                    return noErr
                 }
-                return noErr
             },
             1,
             &eventType,
@@ -142,7 +198,7 @@ final class GlobalSelectionShortcut {
         RegisterEventHotKey(
             keyCode,
             Self.carbonModifiers(from: modifiers),
-            EventHotKeyID(signature: 0x4C_59_52_53, id: 1),
+            EventHotKeyID(signature: 0x4C_59_52_53, id: hotKeyID),
             GetApplicationEventTarget(),
             0,
             &hotKey

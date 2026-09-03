@@ -30,6 +30,7 @@ final class VoiceModeController: NSObject, ObservableObject {
     private var dataChannel: RTCDataChannel?
     private var remoteAudioTrack: RTCAudioTrack?
     private var sessionTask: Task<Void, Never>?
+    private var didSendGreeting = false
     private let bluetoothPlaybackRoute = VoiceModeBluetoothPlaybackRoute()
 
     private static let factory: RTCPeerConnectionFactory = {
@@ -61,6 +62,7 @@ final class VoiceModeController: NSObject, ObservableObject {
         }
 
         notice = nil
+        didSendGreeting = false
         state = .connecting
         sessionTask = Task { [weak self] in
             guard let self else { return }
@@ -71,6 +73,7 @@ final class VoiceModeController: NSObject, ObservableObject {
                 try await connect(apiKey: apiKey)
                 try Task.checkCancellation()
                 state = .listening
+                sendGreetingIfNeeded()
             } catch is CancellationError {
                 return
             } catch {
@@ -91,6 +94,7 @@ final class VoiceModeController: NSObject, ObservableObject {
         peerConnection?.close()
         peerConnection = nil
         bluetoothPlaybackRoute.deactivate()
+        didSendGreeting = false
         state = .idle
     }
 
@@ -320,6 +324,22 @@ final class VoiceModeController: NSObject, ObservableObject {
         )
     }
 
+    private func sendGreetingIfNeeded() {
+        guard !didSendGreeting, let dataChannel, dataChannel.readyState == .open else {
+            return
+        }
+        didSendGreeting = true
+        let payload: [String: Any] = [
+            "type": "response.create",
+            "response": ["instructions": "Say a brief hi. Nothing else."]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
+            didSendGreeting = false
+            return
+        }
+        dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+    }
+
     private static func microphoneAllowed() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
@@ -530,7 +550,12 @@ private enum VoiceModeError: LocalizedError {
 }
 
 extension VoiceModeController: RTCDataChannelDelegate {
-    nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
+    nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        guard dataChannel.readyState == .open else { return }
+        Task { @MainActor [weak self] in
+            self?.sendGreetingIfNeeded()
+        }
+    }
 
     nonisolated func dataChannel(
         _ dataChannel: RTCDataChannel,

@@ -103,19 +103,28 @@ final class NotchPanel: OverlayPanel {
         voiceMode.stop()
     }
 
+    func toggleVoice() {
+        presentExpanded()
+        voiceMode.toggle()
+    }
+
     func invoke(notice: Notice? = nil) {
+        session.notice = notice
+        presentExpanded()
+        promptFocusRequests.send()
+    }
+
+    private func presentExpanded() {
         if currentLayout == nil {
             positionOnActiveScreen()
         }
 
-        session.notice = notice
         isPinnedUntilHover = true
         pendingCollapse?.cancel()
         pendingCollapse = nil
         orderFrontRegardless()
         setExpanded(true)
         makeKey()
-        promptFocusRequests.send()
     }
 
     private func handleHoverChange(_ hovering: Bool) {

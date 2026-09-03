@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct SettingsView: View {
@@ -35,6 +36,16 @@ struct SettingsView: View {
     private var selectionCharacter = "A"
     @AppStorage(SelectionShortcutPreferences.keyCodeKey)
     private var selectionKeyCode = 0
+    @AppStorage(VoiceShortcutPreferences.isEnabledKey)
+    private var voiceShortcutEnabled = true
+    @AppStorage(VoiceShortcutPreferences.modifierFlagsKey)
+    private var voiceModifierFlags = Int(
+        VoiceShortcutPreferences.defaultModifiers.rawValue
+    )
+    @AppStorage(VoiceShortcutPreferences.characterKey)
+    private var voiceCharacter = "M"
+    @AppStorage(VoiceShortcutPreferences.keyCodeKey)
+    private var voiceKeyCode = Int(kVK_ANSI_M)
 
     var body: some View {
         NavigationSplitView {
@@ -51,7 +62,7 @@ struct SettingsView: View {
                 shortcutsView
             }
         }
-        .frame(width: 650, height: 420)
+        .frame(width: 650, height: 520)
         .onAppear(perform: loadKey)
     }
 
@@ -175,6 +186,30 @@ struct SettingsView: View {
                 .frame(width: 140, height: 28)
             }
             .disabled(!selectionShortcutEnabled)
+
+            Divider()
+
+            Toggle("Enable Voice Mode shortcut", isOn: $voiceShortcutEnabled)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice Mode")
+                        .font(.headline)
+                    Text("Starts or stops voice mode.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                ShortcutRecorder(
+                    modifierFlags: $voiceModifierFlags,
+                    character: $voiceCharacter,
+                    keyCode: $voiceKeyCode
+                )
+                .frame(width: 140, height: 28)
+            }
+            .disabled(!voiceShortcutEnabled)
 
             Text("macOS may ask for Input Monitoring permission so the shortcut works in other apps.")
                 .font(.caption)
