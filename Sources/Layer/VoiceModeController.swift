@@ -1,6 +1,7 @@
 @preconcurrency import WebRTC
 import AVFoundation
 import Combine
+import CoreAudio
 import Foundation
 
 enum VoiceModeState: Equatable {
@@ -29,6 +30,7 @@ final class VoiceModeController: NSObject, ObservableObject {
     private var dataChannel: RTCDataChannel?
     private var remoteAudioTrack: RTCAudioTrack?
     private var sessionTask: Task<Void, Never>?
+    private let bluetoothPlaybackRoute = VoiceModeBluetoothPlaybackRoute()
 
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -88,6 +90,7 @@ final class VoiceModeController: NSObject, ObservableObject {
         peerConnection?.delegate = nil
         peerConnection?.close()
         peerConnection = nil
+        bluetoothPlaybackRoute.deactivate()
         state = .idle
     }
 
@@ -99,6 +102,7 @@ final class VoiceModeController: NSObject, ObservableObject {
         let ephemeralKey = try await createClientSecret(apiKey: apiKey)
         let configuration = RTCConfiguration()
         configuration.sdpSemantics = .unifiedPlan
+        bluetoothPlaybackRoute.activate()
         guard let peerConnection = Self.factory.peerConnection(
             with: configuration,
             constraints: RTCMediaConstraints(
@@ -325,6 +329,189 @@ final class VoiceModeController: NSObject, ObservableObject {
         default:
             return false
         }
+    }
+}
+
+/// Keeps Bluetooth headphones on A2DP by not capturing their microphone.
+/// WebRTC's Mac ADM assumes 48 kHz; HFP drops AirPods to 8/16 kHz and playback stretches.
+/// ponytail: no custom RTCAudioDevice; add one if a machine has no built-in mic.
+private final class VoiceModeBluetoothPlaybackRoute: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "layer.voice-audio-route")
+    private var restoredInput: AudioDeviceID?
+    private var isActive = false
+    private var inputListener: AudioObjectPropertyListenerBlock?
+    private var outputListener: AudioObjectPropertyListenerBlock?
+
+    func activate() {
+        queue.sync {
+            isActive = true
+            installListeners()
+            enforce()
+        }
+    }
+
+    func deactivate() {
+        queue.sync {
+            guard isActive else { return }
+            isActive = false
+            removeListeners()
+            if let restoredInput {
+                Self.setDefaultInput(restoredInput)
+                self.restoredInput = nil
+            }
+        }
+    }
+
+    private func enforce() {
+        guard isActive else { return }
+        guard let output = Self.defaultDevice(kAudioHardwarePropertyDefaultOutputDevice),
+              Self.isBluetooth(output),
+              let input = Self.defaultDevice(kAudioHardwarePropertyDefaultInputDevice),
+              Self.isBluetooth(input),
+              let builtIn = Self.builtInInput(),
+              builtIn != input else { return }
+        if restoredInput == nil {
+            restoredInput = input
+        }
+        Self.setDefaultInput(builtIn)
+    }
+
+    private func installListeners() {
+        guard inputListener == nil else { return }
+        let inputBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.enforce()
+        }
+        let outputBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.enforce()
+        }
+        inputListener = inputBlock
+        outputListener = outputBlock
+        var inputAddress = Self.propertyAddress(kAudioHardwarePropertyDefaultInputDevice)
+        var outputAddress = Self.propertyAddress(kAudioHardwarePropertyDefaultOutputDevice)
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &inputAddress,
+            queue,
+            inputBlock
+        )
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &outputAddress,
+            queue,
+            outputBlock
+        )
+    }
+
+    private func removeListeners() {
+        var inputAddress = Self.propertyAddress(kAudioHardwarePropertyDefaultInputDevice)
+        var outputAddress = Self.propertyAddress(kAudioHardwarePropertyDefaultOutputDevice)
+        if let inputListener {
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &inputAddress,
+                queue,
+                inputListener
+            )
+        }
+        if let outputListener {
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &outputAddress,
+                queue,
+                outputListener
+            )
+        }
+        inputListener = nil
+        outputListener = nil
+    }
+
+    private static func isBluetooth(_ device: AudioDeviceID) -> Bool {
+        switch transport(device) {
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func builtInInput() -> AudioDeviceID? {
+        devices().first {
+            hasInput($0) && transport($0) == kAudioDeviceTransportTypeBuiltIn
+        }
+    }
+
+    private static func defaultDevice(_ selector: AudioObjectPropertySelector) -> AudioDeviceID? {
+        var device = AudioDeviceID()
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = propertyAddress(selector)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &device
+        )
+        return status == noErr && device != kAudioObjectUnknown ? device : nil
+    }
+
+    @discardableResult
+    private static func setDefaultInput(_ device: AudioDeviceID) -> Bool {
+        var device = device
+        var address = propertyAddress(kAudioHardwarePropertyDefaultInputDevice)
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            size,
+            &device
+        ) == noErr
+    }
+
+    private static func devices() -> [AudioDeviceID] {
+        var address = propertyAddress(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else {
+            return []
+        }
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        var devices = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &devices) == noErr else {
+            return []
+        }
+        return devices
+    }
+
+    private static func hasInput(_ device: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        return AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr
+            && size > 0
+    }
+
+    private static func transport(_ device: AudioDeviceID) -> UInt32 {
+        var type: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = propertyAddress(kAudioDevicePropertyTransportType)
+        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &type)
+        return status == noErr ? type : 0
+    }
+
+    private static func propertyAddress(
+        _ selector: AudioObjectPropertySelector
+    ) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
     }
 }
 
