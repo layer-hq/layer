@@ -27,6 +27,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
 enum NoticeRecovery: Equatable, Sendable {
     case settings
     case screenRecordingSettings
+    case microphoneSettings
 }
 
 struct Notice: Equatable, Sendable {

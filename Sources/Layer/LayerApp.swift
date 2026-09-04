@@ -14,8 +14,18 @@ struct LayerApp: App {
 
 @MainActor
 func openScreenRecordingSettings() {
+    openPrivacySettings("Privacy_ScreenCapture")
+}
+
+@MainActor
+func openMicrophoneSettings() {
+    openPrivacySettings("Privacy_Microphone")
+}
+
+@MainActor
+private func openPrivacySettings(_ pane: String) {
     guard let url = URL(
-        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        string: "x-apple.systempreferences:com.apple.preference.security?\(pane)"
     ) else {
         return
     }

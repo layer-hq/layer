@@ -27,6 +27,8 @@ manually selected region as visual context.
   [OpenAI's data controls](https://developers.openai.com/api/docs/guides/your-data)
   for retention and deletion.
 - **Telemetry:** Layer includes no analytics or telemetry.
+- **Microphone:** Required for voice mode. Audio is sent to OpenAI's Realtime
+  API only while the Notch microphone control is on.
 - **Screen Recording:** Required only to capture the active display or a
   selected region. macOS controls access in Privacy & Security settings.
 - **Input Monitoring:** Used for the global double-modifier shortcut so Layer
@@ -39,7 +41,8 @@ manually selected region as visual context.
   Input Monitoring permission at the coarse granularity of "input events";
   there is no narrower scope an app can request.
 - **App Sandbox:** The app is intentionally built without App Sandbox. macOS
-  privacy permissions still gate Screen Recording and Input Monitoring.
+  privacy permissions still gate Screen Recording, Microphone, and Input
+  Monitoring.
 
 ## Requirements
 
