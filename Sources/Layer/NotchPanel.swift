@@ -26,11 +26,11 @@ final class NotchPanel: OverlayPanel {
     private let session = NotchSession()
     private let voiceMode = VoiceModeController()
     private let onSelect: () -> Void
-    private let onSubmitPrompt: (String, Bool) -> Void
+    private let onSubmitPrompt: (String, Bool, Bool) -> Void
 
     init(
         onSelect: @escaping () -> Void,
-        onSubmitPrompt: @escaping (String, Bool) -> Void
+        onSubmitPrompt: @escaping (String, Bool, Bool) -> Void
     ) {
         self.onSelect = onSelect
         self.onSubmitPrompt = onSubmitPrompt
@@ -79,10 +79,11 @@ final class NotchPanel: OverlayPanel {
                 onSelect: { [weak self] in
                     self?.startSelection()
                 },
-                onSubmitPrompt: { [weak self] prompt, takeScreenContext in
+                onSubmitPrompt: { [weak self] prompt, takeScreenContext, insertMode in
                     self?.submitPrompt(
                         prompt,
-                        takeScreenContext: takeScreenContext
+                        takeScreenContext: takeScreenContext,
+                        insertMode: insertMode
                     )
                 },
                 onContentHeightChange: { [weak self] height in
@@ -138,9 +139,13 @@ final class NotchPanel: OverlayPanel {
         }
     }
 
-    private func submitPrompt(_ prompt: String, takeScreenContext: Bool) {
+    private func submitPrompt(
+        _ prompt: String,
+        takeScreenContext: Bool,
+        insertMode: Bool
+    ) {
         setExpanded(false)
-        onSubmitPrompt(prompt, takeScreenContext)
+        onSubmitPrompt(prompt, takeScreenContext, insertMode)
     }
 
     private func startSelection() {

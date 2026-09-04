@@ -31,7 +31,7 @@ struct NotchView: View {
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
     let onSelect: () -> Void
-    let onSubmitPrompt: (String, Bool) -> Void
+    let onSubmitPrompt: (String, Bool, Bool) -> Void
     let onContentHeightChange: (CGFloat) -> Void
 
     @State private var prompt = ""
@@ -148,13 +148,13 @@ struct NotchView: View {
                 text: $prompt,
                 shouldFocus: isExpanded && !voiceMode.isActive,
                 focusRequests: promptFocusRequests,
-                onSubmit: { submittedPrompt in
+                onSubmit: { submittedPrompt, insertMode in
                     let trimmedPrompt = submittedPrompt.trimmingCharacters(
                         in: .whitespacesAndNewlines
                     )
                     guard !trimmedPrompt.isEmpty else { return }
                     prompt = ""
-                    onSubmitPrompt(trimmedPrompt, takeScreenContext)
+                    onSubmitPrompt(trimmedPrompt, takeScreenContext, insertMode)
                 }
             )
             .disabled(voiceMode.isActive)
@@ -201,6 +201,9 @@ struct NotchView: View {
                     .controlSize(.small)
             case .microphoneSettings:
                 Button("System Settings", action: openMicrophoneSettings)
+                    .controlSize(.small)
+            case .accessibilitySettings:
+                Button("System Settings", action: openAccessibilitySettings)
                     .controlSize(.small)
             case .settings:
                 Button("Open Settings", action: showSettings)
