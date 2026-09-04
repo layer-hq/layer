@@ -39,7 +39,7 @@ struct Notice: Equatable, Sendable {
 struct ChatResponseRequest: Sendable {
     let prompt: String
     let credential: String
-    let instructions: String?
+    var instructions: String? = nil
     let continuationID: String?
     let screenAttachment: ScreenAttachment?
 }
@@ -128,7 +128,6 @@ final class ChatConversation: ObservableObject {
         let request = ChatResponseRequest(
             prompt: prompt,
             credential: credential,
-            instructions: nil,
             continuationID: continuationID,
             screenAttachment: screenContext.attachment
         )

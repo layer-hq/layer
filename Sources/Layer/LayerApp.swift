@@ -34,10 +34,5 @@ private func openPrivacySettings(_ pane: String) {
 
 @MainActor
 func openAccessibilitySettings() {
-    guard let url = URL(
-        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    ) else {
-        return
-    }
-    NSWorkspace.shared.open(url)
+    openPrivacySettings("Privacy_Accessibility")
 }

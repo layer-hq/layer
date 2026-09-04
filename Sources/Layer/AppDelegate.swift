@@ -10,8 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var previousExternalApplication: NSRunningApplication?
     private var insertionContext: TextInsertionContext?
     private let screenContextAcquisition = ScreenContextAcquisition()
-    private let credentials = StoredChatCredentialAdapter()
-    private let responses = OpenAIClient()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
     private var voiceShortcut: GlobalSelectionShortcut?
@@ -231,7 +229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard let credential = credentials.loadCredential(), !credential.isEmpty else {
+        guard let credential = StoredChatCredentialAdapter().loadCredential(),
+              !credential.isEmpty else {
             notchPanel?.invoke(
                 notice: Notice(
                     message: "Add an OpenAI API key in Settings before sending a message.",
@@ -281,17 +280,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 var text = ""
-                for try await event in responses.streamResponse(for: request) {
+                for try await event in OpenAIClient().streamResponse(for: request) {
                     if case .textDelta(let delta) = event {
                         text += delta
                     }
                 }
-                guard !text.isEmpty else { return }
+                guard !text.isEmpty else {
+                    notchPanel?.finishGenerating()
+                    return
+                }
                 await TextInserter().insert(
                     text,
                     into: applicationToRestore,
                     restoring: context
                 )
+                notchPanel?.finishGenerating()
             } catch {
                 notchPanel?.invoke(
                     notice: Notice(

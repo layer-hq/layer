@@ -7,6 +7,7 @@ import SwiftUI
 final class NotchSession: ObservableObject {
     @Published var notice: Notice?
     @Published var isExpanded = false
+    @Published var isGenerating = false
 }
 
 @MainActor
@@ -110,9 +111,16 @@ final class NotchPanel: OverlayPanel {
     }
 
     func invoke(notice: Notice? = nil) {
+        session.isGenerating = false
         session.notice = notice
         presentExpanded()
         promptFocusRequests.send()
+    }
+
+    func finishGenerating() {
+        isPinnedUntilHover = false
+        setExpanded(false)
+        session.isGenerating = false
     }
 
     private func presentExpanded() {
@@ -134,7 +142,7 @@ final class NotchPanel: OverlayPanel {
             pendingCollapse = nil
             isPinnedUntilHover = false
             setExpanded(true)
-        } else if !isPinnedUntilHover {
+        } else if !isPinnedUntilHover, !session.isGenerating {
             scheduleCollapseCheck()
         }
     }
@@ -144,7 +152,15 @@ final class NotchPanel: OverlayPanel {
         takeScreenContext: Bool,
         insertMode: Bool
     ) {
-        setExpanded(false)
+        if insertMode {
+            session.notice = nil
+            session.isGenerating = true
+            isPinnedUntilHover = true
+            pendingCollapse?.cancel()
+            pendingCollapse = nil
+        } else {
+            setExpanded(false)
+        }
         onSubmitPrompt(prompt, takeScreenContext, insertMode)
     }
 
@@ -158,7 +174,7 @@ final class NotchPanel: OverlayPanel {
         pendingCollapse?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self, self.isExpanded else { return }
+            guard let self, self.isExpanded, !self.session.isGenerating else { return }
 
             let hoverBounds = self.frame.insetBy(dx: -6, dy: -6)
             if hoverBounds.contains(NSEvent.mouseLocation) {

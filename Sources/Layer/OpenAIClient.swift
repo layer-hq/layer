@@ -32,12 +32,11 @@ struct OpenAIClient: ChatResponseStreaming {
                         "model": "gpt-5.4",
                         "input": Self.input(for: chatRequest),
                         "stream": true,
-                        "store": true
+                        "store": true,
+                        "tools": [["type": "web_search"]]
                     ]
                     if let instructions = chatRequest.instructions {
                         body["instructions"] = instructions
-                    } else {
-                        body["tools"] = [["type": "web_search"]]
                     }
                     if let continuationID = chatRequest.continuationID {
                         body["previous_response_id"] = continuationID

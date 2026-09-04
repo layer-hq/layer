@@ -118,7 +118,7 @@ private struct SelectionPromptView: View {
             placeholder: "Ask about this selection",
             shouldFocus: true,
             focusRequests: focusRequests,
-            onSubmit: { prompt, _ in onSubmit(prompt) }
+            onSubmit: onSubmit
         )
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))

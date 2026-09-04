@@ -75,6 +75,11 @@ struct NotchView: View {
             }
             .animation(.easeOut(duration: 0.15), value: isExpanded)
             .animation(.easeOut(duration: 0.15), value: voiceMode.state)
+            .onChange(of: session.isGenerating) {
+                if !session.isGenerating, !session.isExpanded {
+                    prompt = ""
+                }
+            }
         }
     }
 
@@ -144,20 +149,41 @@ struct NotchView: View {
                 }
             }
 
-            PromptField(
-                text: $prompt,
-                shouldFocus: isExpanded && !voiceMode.isActive,
-                focusRequests: promptFocusRequests,
-                onSubmit: { submittedPrompt, insertMode in
-                    let trimmedPrompt = submittedPrompt.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-                    guard !trimmedPrompt.isEmpty else { return }
-                    prompt = ""
-                    onSubmitPrompt(trimmedPrompt, takeScreenContext, insertMode)
+            HStack(spacing: 8) {
+                PromptField(
+                    text: $prompt,
+                    shouldFocus: isExpanded && !voiceMode.isActive && !session.isGenerating,
+                    focusRequests: promptFocusRequests,
+                    onCommandReturn: { submit(insertMode: true) },
+                    onSubmit: { _ in submit(insertMode: false) }
+                )
+                .disabled(voiceMode.isActive || session.isGenerating)
+
+                promptActionButton(
+                    title: "Chat",
+                    shortcut: "↩",
+                    help: "Open a conversation (Return)",
+                    fill: Color(nsColor: .systemGreen),
+                    shade: 0.32
+                ) {
+                    submit(insertMode: false)
                 }
-            )
-            .disabled(voiceMode.isActive)
+                .disabled(!canSubmit)
+
+                promptActionButton(
+                    title: session.isGenerating ? "Inserting" : "Insert",
+                    shortcut: session.isGenerating ? nil : "⌘↩",
+                    help: "Insert at the cursor (⌘Return)",
+                    fill: Color.accentColor,
+                    shade: 0.18,
+                    showsProgress: session.isGenerating
+                ) {
+                    submit(insertMode: true)
+                }
+                .disabled(!canSubmit && !session.isGenerating)
+                .allowsHitTesting(!session.isGenerating)
+                .accessibilityLabel(session.isGenerating ? "Generating" : "Insert")
+            }
 
             HStack(spacing: 12) {
                 Toggle("Take screen context", isOn: $takeScreenContext)
@@ -174,6 +200,7 @@ struct NotchView: View {
                     }
                 }
                 .controlSize(.small)
+                .disabled(session.isGenerating)
                 .accessibilityHint("Enter select mode")
 
                 Spacer()
@@ -182,6 +209,76 @@ struct NotchView: View {
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 18)
+    }
+
+    private var canSubmit: Bool {
+        !session.isGenerating
+            && !voiceMode.isActive
+            && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit(insertMode: Bool) {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty, canSubmit else { return }
+        if !insertMode {
+            prompt = ""
+        }
+        onSubmitPrompt(trimmedPrompt, takeScreenContext, insertMode)
+    }
+
+    private func promptActionButton(
+        title: String,
+        shortcut: String?,
+        help: String,
+        fill: Color,
+        shade: Double,
+        showsProgress: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if showsProgress {
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(.white)
+                }
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.28))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(.white.opacity(0.32), lineWidth: 0.5)
+                        }
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minWidth: 104)
+            .frame(maxHeight: .infinity)
+            .foregroundStyle(.white)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(fill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(.black.opacity(shade))
+                }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(.white.opacity(0.14), lineWidth: 0.5)
+        }
+        .help(help)
+        .accessibilityHint(help)
     }
 
     private func showSettings() {
