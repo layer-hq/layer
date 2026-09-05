@@ -6,6 +6,7 @@ DerivedData/
 # Xcode user state
 *.xcuserdatad
 xcuserdata/
+.vscode/
 
 # macOS
 .DS_Store
