@@ -41,6 +41,63 @@ private func postCommand(_ keyCode: CGKeyCode, to processID: pid_t) {
     }
 }
 
+struct InsertResult: Decodable, Equatable, Sendable {
+    enum Kind: String, CaseIterable, Decodable, Sendable {
+        case text
+        case table
+    }
+
+    let kind: Kind
+    let text: String
+    let rows: [[String]]
+
+    init(responseText: String) throws {
+        guard let data = responseText.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(Self.self, from: data) else {
+            throw OpenAIClientError.invalidResponse
+        }
+        if decoded.kind == .table {
+            guard let columnCount = decoded.rows.first?.count,
+                  columnCount > 0,
+                  decoded.rows.allSatisfy({ $0.count == columnCount }) else {
+                throw OpenAIClientError.invalidResponse
+            }
+        }
+        self = decoded
+    }
+
+    var string: String {
+        guard kind == .table else { return text }
+        return rows.map { $0.map(Self.normalize).joined(separator: "\t") }
+            .joined(separator: "\n")
+    }
+
+    var html: String? {
+        guard kind == .table else { return nil }
+        return "<table><tbody>"
+            + rows.map { row in
+                "<tr>"
+                    + row.map {
+                        "<td>\(Self.escapeHTML(Self.normalize($0)))</td>"
+                    }.joined()
+                    + "</tr>"
+            }.joined()
+            + "</tbody></table>"
+    }
+
+    private static func normalize(_ cell: String) -> String {
+        cell.components(separatedBy: .newlines)
+            .joined(separator: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+    }
+
+    private static func escapeHTML(_ cell: String) -> String {
+        cell.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+}
+
 @MainActor
 struct TextInsertionContext {
     let element: AXUIElement?
@@ -151,7 +208,7 @@ struct TextInsertionContext {
 @MainActor
 struct TextInserter {
     func insert(
-        _ text: String,
+        _ result: InsertResult,
         into application: NSRunningApplication,
         restoring context: TextInsertionContext?
     ) async {
@@ -159,7 +216,15 @@ struct TextInserter {
         let savedContents = snapshot(pasteboard)
 
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        if let html = result.html {
+            let item = NSPasteboardItem()
+            item.setString(result.string, forType: .string)
+            item.setString(result.string, forType: .tabularText)
+            item.setString(html, forType: .html)
+            pasteboard.writeObjects([item])
+        } else {
+            pasteboard.setString(result.string, forType: .string)
+        }
         let insertedChangeCount = pasteboard.changeCount
 
         application.activate(options: [.activateAllWindows])

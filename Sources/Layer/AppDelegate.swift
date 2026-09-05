@@ -262,15 +262,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             credential: credential,
             instructions: """
                 Edit the user's selected text according to their instruction. \
-                Return the complete revised text, preserving all unaffected \
-                content. For additive requests, integrate the new content in \
-                the appropriate place instead of returning only the addition. \
-                Do not add introductions, explanations, follow-up offers, or \
-                wrappers such as quotation marks or Markdown code fences. \
-                Preserve formatting that belongs to the original text or is \
-                explicitly requested. If no text is selected, return only the \
-                new text requested by the user.
+                Preserve all unaffected content and integrate additions in the \
+                appropriate place. Use kind "table" when the result naturally \
+                has rows and columns, including requests to add a row or \
+                column; put the complete table matrix in rows and leave text \
+                empty. Otherwise use kind "text", put the complete revised \
+                text in text, and leave rows empty. Do not add introductions, \
+                explanations, follow-up offers, quotation wrappers, Markdown \
+                tables, or code fences.
                 """,
+            structuredOutput: true,
             continuationID: nil,
             screenAttachment: nil
         )
@@ -279,18 +280,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
 
             do {
-                var text = ""
+                var responseText = ""
                 for try await event in OpenAIClient().streamResponse(for: request) {
                     if case .textDelta(let delta) = event {
-                        text += delta
+                        responseText += delta
                     }
                 }
-                guard !text.isEmpty else {
-                    notchPanel?.finishGenerating()
-                    return
-                }
+                let result = try InsertResult(responseText: responseText)
                 await TextInserter().insert(
-                    text,
+                    result,
                     into: applicationToRestore,
                     restoring: context
                 )

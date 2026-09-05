@@ -40,6 +40,7 @@ struct ChatResponseRequest: Sendable {
     let prompt: String
     let credential: String
     var instructions: String? = nil
+    var structuredOutput = false
     let continuationID: String?
     let screenAttachment: ScreenAttachment?
 }
