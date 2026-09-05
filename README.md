@@ -18,7 +18,8 @@ manually selected region as visual context.
 
 - **OpenAI:** Layer uses your own API key, saved locally in the app's macOS user
   preferences. Every Responses API request sets `store: true`, so OpenAI retains
-  each response — including the prompt and any Screen context image — as
+  each response — including the prompt, any selected text used with Insert, and
+  any Screen context image — as
   application state on your account; Layer carries conversational continuity by
   referencing the previous response by id rather than resending local history.
   Each Turn also enables OpenAI's hosted web search tool, so the model may query
@@ -40,9 +41,16 @@ manually selected region as visual context.
   its own key events, and the keys themselves are never read. macOS grants the
   Input Monitoring permission at the coarse granularity of "input events";
   there is no narrower scope an app can request.
+- **Accessibility:** Required to insert at the cursor in another app (restore
+  focus and post paste). At invoke time Layer also reads the focused field's
+  selected text, or if Accessibility cannot see it, copies with Cmd+C, uses
+  that string as prompt context, then restores the clipboard. Insert sends the
+  prompt and that selected text to OpenAI. Paste puts the result on the
+  clipboard briefly, then restores the previous clipboard when nothing else
+  changed it.
 - **App Sandbox:** The app is intentionally built without App Sandbox. macOS
-  privacy permissions still gate Screen Recording, Microphone, and Input
-  Monitoring.
+  privacy permissions still gate Screen Recording, Microphone, Input
+  Monitoring, and Accessibility.
 
 ## Requirements
 
