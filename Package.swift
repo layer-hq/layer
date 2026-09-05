@@ -18,7 +18,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
         .package(url: "https://github.com/JohnSundell/Splash", from: "0.16.0"),
-        .package(url: "https://github.com/stasel/WebRTC.git", from: "152.0.0")
+        .package(url: "https://github.com/stasel/WebRTC.git", from: "152.0.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6")
     ],
     targets: [
         .executableTarget(
@@ -26,7 +27,8 @@ let package = Package(
             dependencies: [
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "Splash", package: "Splash"),
-                .product(name: "WebRTC", package: "WebRTC")
+                .product(name: "WebRTC", package: "WebRTC"),
+                .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/Layer",
             resources: [
