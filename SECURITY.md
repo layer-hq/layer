@@ -12,8 +12,8 @@ Please report those privately rather than in a public issue.
 
 ## Supported versions
 
-Layer has no tagged releases yet. Only the current `main` branch receives fixes;
-there is no supported older line. See [CHANGELOG.md](CHANGELOG.md).
+The latest tagged GitHub Release is supported, along with `main`. See
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Reporting a vulnerability
 

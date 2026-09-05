@@ -39,6 +39,9 @@ swift test   # run the test suite
 
 Add your API key in Layer's Settings window after the first launch.
 
+The bundle identifier is `com.getlayerapp`. Changing it resets saved settings
+and macOS privacy grants for local builds.
+
 Layer needs **Screen Recording** permission to capture screen context and
 **Input Monitoring** for the global double-modifier shortcut. macOS ties those
 grants to the app bundle, so a rebuilt bundle occasionally has to be re-approved
@@ -75,6 +78,34 @@ A pull request should:
 - include a screenshot or short recording for UI changes;
 - leave CI green. The [Build workflow](.github/workflows/build.yml) builds the
   app bundle and runs the tests on macOS.
+
+## Releasing
+
+Releases are cut from a maintainer Mac. Apple and Sparkle private keys stay in
+the login Keychain; they are never stored in GitHub.
+
+One-time setup:
+
+```sh
+gh auth login
+xcrun notarytool store-credentials "layer-notary"
+```
+
+Sparkle also needs an EdDSA key in the login Keychain (`generate_keys` from
+`.build/artifacts/sparkle/Sparkle/bin` after resolving packages). Export a
+backup with `generate_keys -x`; do not commit it.
+
+Each release:
+
+1. Increment `CFBundleVersion`, set `CFBundleShortVersionString` in
+   `Resources/Info.plist`, and move [CHANGELOG.md](CHANGELOG.md) Unreleased
+   entries under that version.
+2. Commit and push `main`.
+3. Run `./scripts/release.sh`.
+
+The script tests, signs, notarizes a DMG, generates the Sparkle appcast, tags
+`v<version>`, and publishes the GitHub Release. If `gh release create` fails
+after the tag is pushed, rerun that command; do not retag.
 
 ## Dependencies
 

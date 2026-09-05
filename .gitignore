@@ -12,6 +12,7 @@ xcuserdata/
 
 # Secrets and signing material — never commit these
 .env
+sparkle_private_key
 *.p12
 *.cer
 *.certSigningRequest
