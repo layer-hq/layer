@@ -18,4 +18,6 @@ jobs:
       - name: Build app bundle
         run: make build
       - name: Run tests
-        run: swift test
+        run: swift test --enable-code-coverage
+      - name: Fail if coverage is under 70%
+        run: bash scripts/check-coverage.sh
