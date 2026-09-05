@@ -7,6 +7,7 @@ import SwiftUI
 final class NotchSession: ObservableObject {
     @Published var notice: Notice?
     @Published var isExpanded = false
+    @Published var isGenerating = false
 }
 
 @MainActor
@@ -26,11 +27,11 @@ final class NotchPanel: OverlayPanel {
     private let session = NotchSession()
     private let voiceMode = VoiceModeController()
     private let onSelect: () -> Void
-    private let onSubmitPrompt: (String, Bool) -> Void
+    private let onSubmitPrompt: (String, Bool, Bool) -> Void
 
     init(
         onSelect: @escaping () -> Void,
-        onSubmitPrompt: @escaping (String, Bool) -> Void
+        onSubmitPrompt: @escaping (String, Bool, Bool) -> Void
     ) {
         self.onSelect = onSelect
         self.onSubmitPrompt = onSubmitPrompt
@@ -79,10 +80,11 @@ final class NotchPanel: OverlayPanel {
                 onSelect: { [weak self] in
                     self?.startSelection()
                 },
-                onSubmitPrompt: { [weak self] prompt, takeScreenContext in
+                onSubmitPrompt: { [weak self] prompt, takeScreenContext, insertMode in
                     self?.submitPrompt(
                         prompt,
-                        takeScreenContext: takeScreenContext
+                        takeScreenContext: takeScreenContext,
+                        insertMode: insertMode
                     )
                 },
                 onContentHeightChange: { [weak self] height in
@@ -109,9 +111,16 @@ final class NotchPanel: OverlayPanel {
     }
 
     func invoke(notice: Notice? = nil) {
+        session.isGenerating = false
         session.notice = notice
         presentExpanded()
         promptFocusRequests.send()
+    }
+
+    func finishGenerating() {
+        isPinnedUntilHover = false
+        setExpanded(false)
+        session.isGenerating = false
     }
 
     private func presentExpanded() {
@@ -133,14 +142,26 @@ final class NotchPanel: OverlayPanel {
             pendingCollapse = nil
             isPinnedUntilHover = false
             setExpanded(true)
-        } else if !isPinnedUntilHover {
+        } else if !isPinnedUntilHover, !session.isGenerating {
             scheduleCollapseCheck()
         }
     }
 
-    private func submitPrompt(_ prompt: String, takeScreenContext: Bool) {
-        setExpanded(false)
-        onSubmitPrompt(prompt, takeScreenContext)
+    private func submitPrompt(
+        _ prompt: String,
+        takeScreenContext: Bool,
+        insertMode: Bool
+    ) {
+        if insertMode {
+            session.notice = nil
+            session.isGenerating = true
+            isPinnedUntilHover = true
+            pendingCollapse?.cancel()
+            pendingCollapse = nil
+        } else {
+            setExpanded(false)
+        }
+        onSubmitPrompt(prompt, takeScreenContext, insertMode)
     }
 
     private func startSelection() {
@@ -153,7 +174,7 @@ final class NotchPanel: OverlayPanel {
         pendingCollapse?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self, self.isExpanded else { return }
+            guard let self, self.isExpanded, !self.session.isGenerating else { return }
 
             let hoverBounds = self.frame.insetBy(dx: -6, dy: -6)
             if hoverBounds.contains(NSEvent.mouseLocation) {

@@ -31,3 +31,8 @@ private func openPrivacySettings(_ pane: String) {
     }
     NSWorkspace.shared.open(url)
 }
+
+@MainActor
+func openAccessibilitySettings() {
+    openPrivacySettings("Privacy_Accessibility")
+}

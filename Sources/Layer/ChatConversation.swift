@@ -28,6 +28,7 @@ enum NoticeRecovery: Equatable, Sendable {
     case settings
     case screenRecordingSettings
     case microphoneSettings
+    case accessibilitySettings
 }
 
 struct Notice: Equatable, Sendable {
@@ -38,6 +39,8 @@ struct Notice: Equatable, Sendable {
 struct ChatResponseRequest: Sendable {
     let prompt: String
     let credential: String
+    var instructions: String? = nil
+    var structuredOutput = false
     let continuationID: String?
     let screenAttachment: ScreenAttachment?
 }

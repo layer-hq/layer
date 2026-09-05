@@ -7,6 +7,7 @@ struct PromptField: View {
     var placeholder = "Ask anything"
     var shouldFocus = false
     var focusRequests: AnyPublisher<Void, Never>?
+    var onCommandReturn: (() -> Void)?
     let onSubmit: (String) -> Void
 
     @FocusState private var isFocused: Bool
@@ -40,6 +41,14 @@ struct PromptField: View {
             }
             .onSubmit {
                 onSubmit(text)
+            }
+            .onKeyPress(.return, phases: .down) { keyPress in
+                guard keyPress.modifiers.contains(.command),
+                      let onCommandReturn else {
+                    return .ignored
+                }
+                onCommandReturn()
+                return .handled
             }
             .accessibilityLabel(placeholder)
     }

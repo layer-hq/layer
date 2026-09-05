@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SwiftUI
 
 @MainActor
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectionController: ScreenSelectionOverlayController?
     private var chatWindowControllers: [ChatWindowController] = []
     private var previousExternalApplication: NSRunningApplication?
+    private var insertionContext: TextInsertionContext?
     private let screenContextAcquisition = ScreenContextAcquisition()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
@@ -19,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         InvocationShortcutPreferences.registerDefaults()
         SelectionShortcutPreferences.registerDefaults()
         VoiceShortcutPreferences.registerDefaults()
+        let accessibilityOptions = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(accessibilityOptions)
         startInvocationShortcutMonitoring()
         selectionShortcut = GlobalSelectionShortcut(id: 1) { [weak self] in
             self?.beginSelection()
@@ -99,8 +103,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             at: event.timestamp,
             modifier: InvocationShortcutPreferences.modifier
         ) {
+            let application = frontmostExternalApplication()
+            let context = TextInsertionContext.capture()
             let panel = notchPanel ?? makeNotchPanel()
-            panel.invoke()
+
+            guard context.selectedText == nil, let application else {
+                insertionContext = context
+                panel.invoke()
+                return
+            }
+
+            Task { [weak self, weak application, weak panel] in
+                guard let self, let application, let panel else { return }
+                let copiedText = await TextInsertionContext.copiedSelection(
+                    from: application
+                )
+                insertionContext = context.usingCopiedSelection(copiedText)
+                panel.invoke()
+            }
         }
     }
 
@@ -127,11 +147,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSelect: { [weak self] in
                 self?.beginSelection()
             },
-            onSubmitPrompt: { [weak self] prompt, takeScreenContext in
-                self?.showChat(
-                    with: prompt,
-                    takeScreenContext: takeScreenContext
-                )
+            onSubmitPrompt: { [weak self] prompt, takeScreenContext, insertMode in
+                if insertMode {
+                    self?.insertAtCursor(with: prompt)
+                } else {
+                    self?.showChat(
+                        with: prompt,
+                        takeScreenContext: takeScreenContext
+                    )
+                }
             }
         )
         notchPanel = panel
@@ -194,6 +218,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func insertAtCursor(with prompt: String) {
+        guard AXIsProcessTrusted() else {
+            notchPanel?.invoke(
+                notice: Notice(
+                    message: "Grant Accessibility access to insert text.",
+                    recovery: .accessibilitySettings
+                )
+            )
+            return
+        }
+
+        guard let credential = StoredChatCredentialAdapter().loadCredential(),
+              !credential.isEmpty else {
+            notchPanel?.invoke(
+                notice: Notice(
+                    message: "Add an OpenAI API key in Settings before sending a message.",
+                    recovery: .settings
+                )
+            )
+            return
+        }
+
+        guard let applicationToRestore = frontmostExternalApplication() else {
+            notchPanel?.invoke(
+                notice: Notice(
+                    message: "Open a text field in another app before using insert.",
+                    recovery: nil
+                )
+            )
+            return
+        }
+        notchPanel?.resignKey()
+        NSApp.deactivate()
+        applicationToRestore.activate(options: [.activateAllWindows])
+
+        let context = insertionContext
+        let request = ChatResponseRequest(
+            prompt: insertionPrompt(
+                instruction: prompt,
+                selectedText: context?.selectedText
+            ),
+            credential: credential,
+            instructions: """
+                Edit the user's selected text according to their instruction. \
+                Preserve all unaffected content and integrate additions in the \
+                appropriate place. Use kind "table" when the result naturally \
+                has rows and columns, including requests to add a row or \
+                column; put the complete table matrix in rows and leave text \
+                empty. Otherwise use kind "text", put the complete revised \
+                text in text, and leave rows empty. Do not add introductions, \
+                explanations, follow-up offers, quotation wrappers, Markdown \
+                tables, or code fences.
+                """,
+            structuredOutput: true,
+            continuationID: nil,
+            screenAttachment: nil
+        )
+
+        Task { [weak self, applicationToRestore, context] in
+            guard let self else { return }
+
+            do {
+                var responseText = ""
+                for try await event in OpenAIClient().streamResponse(for: request) {
+                    if case .textDelta(let delta) = event {
+                        responseText += delta
+                    }
+                }
+                let result = try InsertResult(responseText: responseText)
+                await TextInserter().insert(
+                    result,
+                    into: applicationToRestore,
+                    restoring: context
+                )
+                notchPanel?.finishGenerating()
+            } catch {
+                notchPanel?.invoke(
+                    notice: Notice(
+                        message: error.localizedDescription,
+                        recovery: .settings
+                    )
+                )
+            }
+        }
+    }
+
     private func presentChat(
         with prompt: String,
         screenContext: ScreenContextOutcome,
@@ -238,4 +348,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selectionController = nil
         notchPanel?.invoke(notice: Notice(screenContextFailure: error))
     }
+}
+
+func insertionPrompt(instruction: String, selectedText: String?) -> String {
+    guard let selectedText, !selectedText.isEmpty else { return instruction }
+    return """
+        User instruction:
+        \(instruction)
+
+        Original selected text:
+        --- BEGIN SELECTED TEXT ---
+        \(selectedText)
+        --- END SELECTED TEXT ---
+
+        Return the complete updated version of the selected text.
+        """
 }

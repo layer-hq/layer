@@ -57,7 +57,8 @@ arguments for changing them are welcome as ordinary issues.
   `~/Library/Preferences/`, readable by any process running as you, and is
   swept into backups. Moving it to the Keychain is a known open task.
 - **The app is not sandboxed.** macOS still gates Screen Recording, Microphone,
-  and Input Monitoring through TCC. See "Privacy and permissions" in the
+  Input Monitoring, and Accessibility through TCC. See "Privacy and permissions"
+  in the
   [README](README.md).
 - **Screen context is sent to OpenAI when enabled, and OpenAI stores it.**
   Requests set `store: true`, so the prompt and any Screen context image are

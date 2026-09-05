@@ -35,6 +35,12 @@ struct OpenAIClient: ChatResponseStreaming {
                         "store": true,
                         "tools": [["type": "web_search"]]
                     ]
+                    if let instructions = chatRequest.instructions {
+                        body["instructions"] = instructions
+                    }
+                    if chatRequest.structuredOutput {
+                        body["text"] = Self.insertResponseFormat
+                    }
                     if let continuationID = chatRequest.continuationID {
                         body["previous_response_id"] = continuationID
                     }
@@ -141,6 +147,35 @@ struct OpenAIClient: ChatResponseStreaming {
                         "image_url": screenAttachment.dataURL,
                         "detail": "auto"
                     ]
+                ]
+            ]
+        ]
+    }
+
+    private nonisolated static var insertResponseFormat: [String: Any] {
+        [
+            "format": [
+                "type": "json_schema",
+                "name": "insert_result",
+                "strict": true,
+                "schema": [
+                    "type": "object",
+                    "properties": [
+                        "kind": [
+                            "type": "string",
+                            "enum": InsertResult.Kind.allCases.map(\.rawValue)
+                        ],
+                        "text": ["type": "string"],
+                        "rows": [
+                            "type": "array",
+                            "items": [
+                                "type": "array",
+                                "items": ["type": "string"]
+                            ]
+                        ]
+                    ],
+                    "required": ["kind", "text", "rows"],
+                    "additionalProperties": false
                 ]
             ]
         ]
