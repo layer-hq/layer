@@ -3,13 +3,7 @@
 All notable changes to Layer are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
-Layer aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-from its first release onward.
-
-**Layer has no releases yet.** `CFBundleShortVersionString` in
-`Resources/Info.plist` reads `0.1.0`, but no `0.1.0` tag or release exists —
-that version has never shipped. Everything below is unreleased work on `main`.
-The first tagged release will move these entries under a `[0.1.0]` heading.
+Layer follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -17,7 +11,14 @@ The first tagged release will move these entries under a `[0.1.0]` heading.
 
 - OpenRouter as a hosted model provider for Chat and Insert, with model loading
   and a fixed official API endpoint.
-- Hosted OpenAI web search on every Turn, so the model can use current
-  information with the existing API key.
 - Copy img on Select writes the chosen region to the clipboard as PNG and TIFF
   without opening Chat, then restores the previous app.
+
+## [0.1.0] - 2026-09-05
+
+### Added
+
+- Hosted OpenAI web search on every Turn, so the model can use current
+  information with the existing API key.
+- Direct distribution as a signed, notarized DMG from GitHub Releases, with
+  Sparkle in-app updates.

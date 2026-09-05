@@ -89,6 +89,14 @@ Dictation: hold Fn, or the configured fallback shortcut, then release.
 Xcode project files are not required. If `swift --version` is unavailable,
 install Apple's Command Line Tools with `xcode-select --install`.
 
+## Download
+
+[Latest release](https://github.com/layer-hq/layer/releases/latest)
+(signed and notarized). Open the DMG and drag `Layer.app` to Applications.
+The app checks that page for updates.
+
+The bundle identifier is `com.getlayerapp`.
+
 ## Build and run
 
 ```sh
@@ -105,8 +113,6 @@ make dev   # rebuild and relaunch after source changes; requires fswatch
 make stop  # close Layer
 swift test
 ```
-
-The bundle identifier is `use.layer.app`.
 
 ## License
 

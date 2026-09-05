@@ -1,9 +1,15 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
 struct LayerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     var body: some Scene {
         Settings {
@@ -11,6 +17,13 @@ struct LayerApp: App {
         }
         .defaultSize(width: 780, height: 600)
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    updaterController.checkForUpdates(nil)
+                }
+            }
+        }
     }
 }
 
