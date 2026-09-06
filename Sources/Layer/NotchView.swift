@@ -31,12 +31,14 @@ struct NotchView: View {
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
     let onSelect: () -> Void
-    let onSubmitPrompt: (String, Bool, Bool) -> Void
+    let onSubmitPrompt: (String, Bool) -> Void
+    let onToggleVoice: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
 
     @State private var prompt = ""
     @AppStorage("openAIAPIKey") private var apiKey = ""
     @AppStorage("takeScreenContext") private var takeScreenContext = false
+    @AppStorage("includeSelectedContent") private var includeSelectedContent = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -101,7 +103,7 @@ struct NotchView: View {
                 }
 
                 Button {
-                    voiceMode.toggle()
+                    onToggleVoice()
                 } label: {
                     if voiceMode.state == .connecting {
                         ProgressView()
@@ -190,6 +192,11 @@ struct NotchView: View {
                     .toggleStyle(.checkbox)
                     .accessibilityHint("Include information from the screen with the prompt")
 
+                Toggle("Include selected content", isOn: $includeSelectedContent)
+                    .toggleStyle(.checkbox)
+                    .help("May briefly use the clipboard when required.")
+                    .accessibilityHint("May briefly use the clipboard when required.")
+
                 Button(action: onSelect) {
                     HStack(spacing: 6) {
                         PhosphorIcon.selection
@@ -223,7 +230,7 @@ struct NotchView: View {
         if !insertMode {
             prompt = ""
         }
-        onSubmitPrompt(trimmedPrompt, takeScreenContext, insertMode)
+        onSubmitPrompt(trimmedPrompt, insertMode)
     }
 
     private func promptActionButton(

@@ -43,6 +43,7 @@ struct ChatResponseRequest: Sendable {
     var structuredOutput = false
     let continuationID: String?
     let screenAttachment: ScreenAttachment?
+    var selectedContent: String? = nil
 }
 
 enum ChatResponseEvent: Sendable {
@@ -102,7 +103,7 @@ final class ChatConversation: ObservableObject {
 
     func submit(
         _ rawPrompt: String,
-        screenContext: ScreenContextOutcome = .notRequested
+        modelContext: InvocationModelContext = .empty
     ) {
         let prompt = rawPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isResponding else { return }
@@ -116,13 +117,13 @@ final class ChatConversation: ObservableObject {
             return
         }
 
-        notice = screenContext.notice
+        notice = modelContext.screen.notice
         isResponding = true
         messages.append(
             ChatMessage(
                 role: .user,
                 content: prompt,
-                screenAttachment: screenContext.attachment
+                screenAttachment: modelContext.screen.attachment
             )
         )
 
@@ -130,7 +131,8 @@ final class ChatConversation: ObservableObject {
             prompt: prompt,
             credential: credential,
             continuationID: continuationID,
-            screenAttachment: screenContext.attachment
+            screenAttachment: modelContext.screen.attachment,
+            selectedContent: modelContext.selectedContent
         )
 
         let assistantMessageID = UUID()

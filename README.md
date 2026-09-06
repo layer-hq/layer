@@ -5,21 +5,24 @@
 Layer is a native macOS assistant that lives beneath the MacBook notch. Hover
 over the Notch or press the configured modifier key twice, enter a prompt, and
 receive a streamed response from OpenAI. The model may search the web when a
-Turn needs current information. A Turn can include the active display or a
-manually selected region as visual context.
+Turn needs current information. A Turn can include selected content from the
+frontmost app and the active display or a manually selected region as visual
+context.
 
-> **Screen context disclosure:** When **Take screen context** is enabled,
-> submitting a prompt captures the entire active display (the display under the
-> pointer) and sends the image to OpenAI with the prompt and Chat conversation
-> history. **Select** sends only the selected region. Screen context is off by
-> default.
+> **Input context disclosure:** When **Include selected content** is enabled,
+> opening the Notch reads the focused field's selected text (via Accessibility,
+> or briefly via the clipboard if Accessibility cannot see it) and may send that
+> text to OpenAI with Chat, Voice, or Insert. When **Take screen context** is
+> enabled, starting Chat, Voice, or Insert captures the target display, excluding
+> Layer's own windows, and sends the image to OpenAI. **Select** sends only the
+> selected region. Both options are off by default.
 
 ## Privacy and permissions
 
 - **OpenAI:** Layer uses your own API key, saved locally in the app's macOS user
   preferences. Every Responses API request sets `store: true`, so OpenAI retains
-  each response — including the prompt, any selected text used with Insert, and
-  any Screen context image — as
+  each response — including the prompt, any selected text, and any Screen
+  context image — as
   application state on your account; Layer carries conversational continuity by
   referencing the previous response by id rather than resending local history.
   Each Turn also enables OpenAI's hosted web search tool, so the model may query
@@ -31,7 +34,8 @@ manually selected region as visual context.
 - **Microphone:** Required for voice mode. Audio is sent to OpenAI's Realtime
   API only while the Notch microphone control is on.
 - **Screen Recording:** Required only to capture the active display or a
-  selected region. macOS controls access in Privacy & Security settings.
+  selected region for Chat, Voice, Insert, or Select. macOS controls access in
+  Privacy & Security settings.
 - **Input Monitoring:** Used for the global double-modifier shortcut so Layer
   can open while another app is active. The global monitor receives only
   modifier-key changes, never typed key events, so Layer does not see what you
@@ -42,12 +46,12 @@ manually selected region as visual context.
   Input Monitoring permission at the coarse granularity of "input events";
   there is no narrower scope an app can request.
 - **Accessibility:** Required to insert at the cursor in another app (restore
-  focus and post paste). At invoke time Layer also reads the focused field's
-  selected text, or if Accessibility cannot see it, copies with Cmd+C, uses
-  that string as prompt context, then restores the clipboard. Insert sends the
-  prompt and that selected text to OpenAI. Paste puts the result on the
-  clipboard briefly, then restores the previous clipboard when nothing else
-  changed it.
+  focus and post paste). When **Include selected content** is enabled, Layer also
+  reads the focused field's selected text before taking focus, or if
+  Accessibility cannot see it, copies with Cmd+C, uses that string as model
+  context, then restores the clipboard. Chat, Voice, and Insert can send that
+  selected text to OpenAI. Paste puts the result on the clipboard briefly, then
+  restores the previous clipboard when nothing else changed it.
 - **App Sandbox:** The app is intentionally built without App Sandbox. macOS
   privacy permissions still gate Screen Recording, Microphone, Input
   Monitoring, and Accessibility.

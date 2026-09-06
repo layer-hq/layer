@@ -50,12 +50,12 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
 
     func show(
         with prompt: String,
-        screenContext: ScreenContextOutcome
+        modelContext: InvocationModelContext
     ) {
         NSApplication.shared.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        conversation.submit(prompt, screenContext: screenContext)
+        conversation.submit(prompt, modelContext: modelContext)
     }
 
     func windowWillClose(_ notification: Notification) {

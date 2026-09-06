@@ -1,3 +1,5 @@
+import ApplicationServices
+import Foundation
 import Testing
 @testable import Layer
 
@@ -11,6 +13,22 @@ func usesCopiedTextWhenAccessibilityCannotReadSelection() {
     ).usingCopiedSelection("Browser editor selection")
 
     #expect(context.selectedText == "Browser editor selection")
+}
+
+@Test
+@MainActor
+func usingCopiedSelectionPreservesRestoreMetadata() {
+    let range = CFRange(location: 3, length: 4)
+    let context = TextInsertionContext(
+        element: AXUIElementCreateSystemWide(),
+        selectedText: nil,
+        selectedRange: range
+    ).usingCopiedSelection("copied")
+
+    #expect(context.selectedText == "copied")
+    #expect(context.element != nil)
+    #expect(context.selectedRange?.location == 3)
+    #expect(context.selectedRange?.length == 4)
 }
 
 @Test
@@ -30,6 +48,40 @@ func buildsInsertionPromptOnlyWhenTextIsSelected() {
     #expect(
         prompt.hasSuffix("Return the complete updated version of the selected text.")
     )
+}
+
+@Test
+func insertRequestIncludesScreenOnlyWhenPresentAndKeepsSelectionAsEditBoundary() {
+    let attachment = ScreenAttachment(imageData: Data([3, 2, 1]))
+    let withScreen = insertChatRequest(
+        instruction: "Tighten this",
+        inputs: InvocationInputs(
+            modelContext: InvocationModelContext(
+                selectedContent: "Original sentence.",
+                screen: ScreenContextOutcome(attachment: attachment, notice: nil)
+            ),
+            interactionTarget: InvocationInteractionTarget()
+        ),
+        credential: "secret"
+    )
+    let withoutScreen = insertChatRequest(
+        instruction: "Tighten this",
+        inputs: InvocationInputs(
+            modelContext: InvocationModelContext(
+                selectedContent: "Original sentence.",
+                screen: .notRequested
+            ),
+            interactionTarget: InvocationInteractionTarget()
+        ),
+        credential: "secret"
+    )
+
+    #expect(withScreen.prompt.contains("Original sentence."))
+    #expect(withScreen.prompt.contains("User instruction:\nTighten this"))
+    #expect(withScreen.screenAttachment?.imageData == attachment.imageData)
+    #expect(withScreen.selectedContent == nil)
+    #expect(withoutScreen.screenAttachment == nil)
+    #expect(withoutScreen.prompt == withScreen.prompt)
 }
 
 @Test

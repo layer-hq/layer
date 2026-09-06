@@ -10,6 +10,9 @@ xcuserdata/
 # macOS
 .DS_Store
 
+# Local working notes
+.notes/
+
 # Secrets and signing material — never commit these
 .env
 *.p12

@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectionController: ScreenSelectionOverlayController?
     private var chatWindowControllers: [ChatWindowController] = []
     private var previousExternalApplication: NSRunningApplication?
-    private var insertionContext: TextInsertionContext?
+    private let inputsCollector = InvocationInputsCollector()
     private let screenContextAcquisition = ScreenContextAcquisition()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
@@ -103,24 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             at: event.timestamp,
             modifier: InvocationShortcutPreferences.modifier
         ) {
-            let application = frontmostExternalApplication()
-            let context = TextInsertionContext.capture()
             let panel = notchPanel ?? makeNotchPanel()
-
-            guard context.selectedText == nil, let application else {
-                insertionContext = context
-                panel.invoke()
-                return
-            }
-
-            Task { [weak self, weak application, weak panel] in
-                guard let self, let application, let panel else { return }
-                let copiedText = await TextInsertionContext.copiedSelection(
-                    from: application
-                )
-                insertionContext = context.usingCopiedSelection(copiedText)
-                panel.invoke()
-            }
+            panel.invoke()
         }
     }
 
@@ -144,17 +128,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeNotchPanel() -> NotchPanel {
         let panel = NotchPanel(
+            collector: inputsCollector,
+            screenContextAcquisition: screenContextAcquisition,
+            frontmostExternalApplication: { [weak self] in
+                self?.frontmostExternalApplication()
+            },
             onSelect: { [weak self] in
                 self?.beginSelection()
             },
-            onSubmitPrompt: { [weak self] prompt, takeScreenContext, insertMode in
+            onSubmitPrompt: { [weak self] prompt, insertMode in
                 if insertMode {
                     self?.insertAtCursor(with: prompt)
                 } else {
-                    self?.showChat(
-                        with: prompt,
-                        takeScreenContext: takeScreenContext
-                    )
+                    self?.showChat(with: prompt)
                 }
             }
         )
@@ -163,7 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func beginSelection() {
-        let applicationToRestore = frontmostExternalApplication()
+        let applicationToRestore = inputsCollector.applicationToRestore
+            ?? frontmostExternalApplication()
+        inputsCollector.clear()
 
         Task { [weak self, weak applicationToRestore] in
             guard let self else { return }
@@ -179,11 +167,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.selectionController = nil
                         self.presentChat(
                             with: prompt,
-                            screenContext: ScreenContextOutcome(
-                                attachment: attachment,
-                                notice: nil
-                            ),
-                            applicationToRestore: applicationToRestore
+                            inputs: InvocationInputs(
+                                modelContext: InvocationModelContext(
+                                    selectedContent: nil,
+                                    screen: ScreenContextOutcome(
+                                        attachment: attachment,
+                                        notice: nil
+                                    )
+                                ),
+                                interactionTarget: InvocationInteractionTarget(
+                                    application: applicationToRestore
+                                )
+                            )
                         )
                     },
                     onCancel: { [weak self, weak applicationToRestore] in
@@ -202,20 +197,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showChat(with prompt: String, takeScreenContext: Bool) {
-        let applicationToRestore = frontmostExternalApplication()
-
-        Task { [weak self, weak applicationToRestore] in
-            guard let self else { return }
-            let screenContext = await screenContextAcquisition.acquire(
-                requested: takeScreenContext
+    private func showChat(with prompt: String) {
+        guard let credential = StoredChatCredentialAdapter().loadCredential(),
+              !credential.isEmpty else {
+            notchPanel?.invoke(
+                notice: Notice(
+                    message: "Add an OpenAI API key in Settings before sending a message.",
+                    recovery: .settings
+                )
             )
-            presentChat(
-                with: prompt,
-                screenContext: screenContext,
-                applicationToRestore: applicationToRestore
-            )
+            return
         }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let inputs = await snapshotInputs()
+            presentChat(with: prompt, inputs: inputs)
+        }
+    }
+
+    private func snapshotInputs() async -> InvocationInputs {
+        await inputsCollector.takeCurrent(
+            capturingScreen: UserDefaults.standard.bool(forKey: "takeScreenContext"),
+            using: screenContextAcquisition
+        )
     }
 
     private func insertAtCursor(with prompt: String) {
@@ -240,7 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard let applicationToRestore = frontmostExternalApplication() else {
+        guard let applicationToRestore = inputsCollector.applicationToRestore
+            ?? frontmostExternalApplication() else {
             notchPanel?.invoke(
                 notice: Notice(
                     message: "Open a text field in another app before using insert.",
@@ -253,31 +259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.deactivate()
         applicationToRestore.activate(options: [.activateAllWindows])
 
-        let context = insertionContext
-        let request = ChatResponseRequest(
-            prompt: insertionPrompt(
-                instruction: prompt,
-                selectedText: context?.selectedText
-            ),
-            credential: credential,
-            instructions: """
-                Edit the user's selected text according to their instruction. \
-                Preserve all unaffected content and integrate additions in the \
-                appropriate place. Use kind "table" when the result naturally \
-                has rows and columns, including requests to add a row or \
-                column; put the complete table matrix in rows and leave text \
-                empty. Otherwise use kind "text", put the complete revised \
-                text in text, and leave rows empty. Do not add introductions, \
-                explanations, follow-up offers, quotation wrappers, Markdown \
-                tables, or code fences.
-                """,
-            structuredOutput: true,
-            continuationID: nil,
-            screenAttachment: nil
-        )
-
-        Task { [weak self, applicationToRestore, context] in
+        Task { [weak self, applicationToRestore] in
             guard let self else { return }
+            let inputs = await snapshotInputs()
+            if let notice = inputs.modelContext.screen.notice {
+                notchPanel?.showNotice(notice)
+            }
+            let context = TextInsertionContext(
+                element: inputs.interactionTarget.element,
+                selectedText: inputs.modelContext.selectedContent,
+                selectedRange: inputs.interactionTarget.selectedRange
+            )
+            let request = insertChatRequest(
+                instruction: prompt,
+                inputs: inputs,
+                credential: credential
+            )
 
             do {
                 var responseText = ""
@@ -306,9 +303,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentChat(
         with prompt: String,
-        screenContext: ScreenContextOutcome,
-        applicationToRestore: NSRunningApplication?
+        inputs: InvocationInputs
     ) {
+        let applicationToRestore = inputs.interactionTarget.application
 
         let controller = ChatWindowController(
             onOpenScreenRecordingSettings: {
@@ -330,7 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatWindowControllers.append(controller)
         controller.show(
             with: prompt,
-            screenContext: screenContext
+            modelContext: inputs.modelContext
         )
     }
 
@@ -357,10 +354,38 @@ func insertionPrompt(instruction: String, selectedText: String?) -> String {
         \(instruction)
 
         Original selected text:
-        --- BEGIN SELECTED TEXT ---
-        \(selectedText)
-        --- END SELECTED TEXT ---
+        \(ModelContextPayload.selectedTextFence(selectedText))
 
         Return the complete updated version of the selected text.
         """
+}
+
+func insertChatRequest(
+    instruction: String,
+    inputs: InvocationInputs,
+    credential: String
+) -> ChatResponseRequest {
+    ChatResponseRequest(
+        prompt: insertionPrompt(
+            instruction: instruction,
+            selectedText: inputs.modelContext.selectedContent
+        ),
+        credential: credential,
+        instructions: """
+            Edit the user's selected text according to their instruction. \
+            Preserve all unaffected content and integrate additions in the \
+            appropriate place. If an image is attached, use it only as \
+            contextual evidence; do not transcribe it and do not change \
+            text that is not part of the selection. Use kind "table" when \
+            the result naturally has rows and columns, including requests \
+            to add a row or column; put the complete table matrix in rows \
+            and leave text empty. Otherwise use kind "text", put the \
+            complete revised text in text, and leave rows empty. Do not \
+            add introductions, explanations, follow-up offers, quotation \
+            wrappers, Markdown tables, or code fences.
+            """,
+        structuredOutput: true,
+        continuationID: nil,
+        screenAttachment: inputs.modelContext.screen.attachment
+    )
 }
