@@ -29,6 +29,7 @@ final class InvocationInputsCollector {
     private var application: NSRunningApplication?
     private var displayID: CGDirectDisplayID?
     private var selection: TextInsertionContext?
+    private var cachedScreen: ScreenContextOutcome?
     private var prepared = false
     private var phase1Task: Task<Void, Never>?
     private var phase1Generation = 0
@@ -128,12 +129,29 @@ final class InvocationInputsCollector {
             await phase1Task.value
         }
         let displayID = self.displayID
+        let cached = requested ? cachedScreen : nil
         var inputs = takeCurrent()
-        inputs.modelContext.screen = await acquisition.acquire(
-            requested: requested,
-            displayID: displayID
-        )
+        if let cached {
+            inputs.modelContext.screen = cached
+        } else {
+            inputs.modelContext.screen = await acquisition.acquire(
+                requested: requested,
+                displayID: displayID
+            )
+        }
         return inputs
+    }
+
+    func restore(_ inputs: InvocationInputs) {
+        application = inputs.interactionTarget.application
+        displayID = inputs.interactionTarget.displayID
+        selection = TextInsertionContext(
+            element: inputs.interactionTarget.element,
+            selectedText: inputs.modelContext.selectedContent,
+            selectedRange: inputs.interactionTarget.selectedRange
+        )
+        cachedScreen = inputs.modelContext.screen
+        prepared = true
     }
 
     func clear() {
@@ -142,6 +160,7 @@ final class InvocationInputsCollector {
         application = nil
         displayID = nil
         selection = nil
+        cachedScreen = nil
         prepared = false
     }
 }

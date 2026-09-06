@@ -120,8 +120,6 @@ struct OpenAIClient: ChatResponseStreaming {
                         throw OpenAIClientError.streamEndedUnexpectedly
                     }
                     continuation.finish()
-                } catch is CancellationError {
-                    continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }

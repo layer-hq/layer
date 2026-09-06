@@ -32,19 +32,23 @@ final class NotchPanel: OverlayPanel {
     private let voiceMode = VoiceModeController()
     private let onSelect: () -> Void
     private let onSubmitPrompt: (String, Bool) -> Void
+    private let onCancelGeneration: () -> Void
+    private var generatingEscapeMonitor: Any?
 
     init(
         collector: InvocationInputsCollector,
         screenContextAcquisition: ScreenContextAcquisition,
         frontmostExternalApplication: @escaping () -> NSRunningApplication?,
         onSelect: @escaping () -> Void,
-        onSubmitPrompt: @escaping (String, Bool) -> Void
+        onSubmitPrompt: @escaping (String, Bool) -> Void,
+        onCancelGeneration: @escaping () -> Void
     ) {
         self.collector = collector
         self.screenContextAcquisition = screenContextAcquisition
         self.frontmostExternalApplication = frontmostExternalApplication
         self.onSelect = onSelect
         self.onSubmitPrompt = onSubmitPrompt
+        self.onCancelGeneration = onCancelGeneration
 
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 180, height: 40),
@@ -53,7 +57,12 @@ final class NotchPanel: OverlayPanel {
 
         hasShadow = true
         escapeKeyMonitor = EscapeKeyMonitor { [weak self] window in
-            guard let self, window === self else { return false }
+            guard let self else { return false }
+            if session.isGenerating {
+                cancelGeneration()
+                return true
+            }
+            guard window === self else { return false }
             if voiceMode.isActive {
                 voiceMode.stop()
             }
@@ -140,7 +149,7 @@ final class NotchPanel: OverlayPanel {
     }
 
     func invoke(notice: Notice? = nil) {
-        session.isGenerating = false
+        setGenerating(false)
         session.notice = notice
         Task { [weak self] in
             guard let self else { return }
@@ -157,7 +166,37 @@ final class NotchPanel: OverlayPanel {
     func finishGenerating() {
         isPinnedUntilHover = false
         setExpanded(false)
-        session.isGenerating = false
+        setGenerating(false)
+    }
+
+    func abortGenerating() {
+        setGenerating(false)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        presentExpanded()
+        promptFocusRequests.send()
+    }
+
+    private func cancelGeneration() {
+        onCancelGeneration()
+        abortGenerating()
+    }
+
+    private func setGenerating(_ generating: Bool) {
+        session.isGenerating = generating
+        if generating {
+            guard generatingEscapeMonitor == nil else { return }
+            generatingEscapeMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: .keyDown
+            ) { [weak self] event in
+                guard event.keyCode == EscapeKeyMonitor.keyCode else { return }
+                Task { @MainActor in
+                    self?.cancelGeneration()
+                }
+            }
+        } else if let generatingEscapeMonitor {
+            NSEvent.removeMonitor(generatingEscapeMonitor)
+            self.generatingEscapeMonitor = nil
+        }
     }
 
     private func presentExpanded() {
@@ -195,7 +234,7 @@ final class NotchPanel: OverlayPanel {
     private func submitPrompt(_ prompt: String, insertMode: Bool) {
         if insertMode {
             session.notice = nil
-            session.isGenerating = true
+            setGenerating(true)
             isPinnedUntilHover = true
             pendingCollapse?.cancel()
             pendingCollapse = nil

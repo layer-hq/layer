@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var voiceShortcut: GlobalSelectionShortcut?
     private var localShortcutMonitor: Any?
     private var globalShortcutMonitor: Any?
+    private var insertionTask: Task<Void, Never>?
+    private var insertionGeneration = 0
+    private var insertionInputs: InvocationInputs?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -52,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        cancelInsertion()
         notchPanel?.stopVoice()
         NotificationCenter.default.removeObserver(self)
         selectionShortcut?.invalidate()
@@ -142,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self?.showChat(with: prompt)
                 }
+            },
+            onCancelGeneration: { [weak self] in
+                self?.cancelInsertion()
             }
         )
         notchPanel = panel
@@ -259,9 +266,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.deactivate()
         applicationToRestore.activate(options: [.activateAllWindows])
 
-        Task { [weak self, applicationToRestore] in
+        insertionGeneration += 1
+        let generation = insertionGeneration
+        insertionTask?.cancel()
+        insertionTask = Task { [weak self, applicationToRestore] in
             guard let self else { return }
+            defer {
+                if insertionGeneration == generation {
+                    insertionTask = nil
+                }
+            }
             let inputs = await snapshotInputs()
+            insertionInputs = inputs
+            if Task.isCancelled {
+                revertInsertion(inputs, generation: generation)
+                return
+            }
             if let notice = inputs.modelContext.screen.notice {
                 notchPanel?.showNotice(notice)
             }
@@ -283,14 +303,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         responseText += delta
                     }
                 }
+                try Task.checkCancellation()
                 let result = try InsertResult(responseText: responseText)
                 await TextInserter().insert(
                     result,
                     into: applicationToRestore,
                     restoring: context
                 )
+                guard insertionGeneration == generation else { return }
+                insertionInputs = nil
                 notchPanel?.finishGenerating()
+            } catch is CancellationError {
+                revertInsertion(inputs, generation: generation)
             } catch {
+                guard !Task.isCancelled else {
+                    revertInsertion(inputs, generation: generation)
+                    return
+                }
                 notchPanel?.invoke(
                     notice: Notice(
                         message: error.localizedDescription,
@@ -299,6 +328,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+    }
+
+    private func cancelInsertion() {
+        insertionTask?.cancel()
+        if let insertionInputs {
+            inputsCollector.restore(insertionInputs)
+        }
+        insertionGeneration += 1
+    }
+
+    private func revertInsertion(_ inputs: InvocationInputs, generation: Int) {
+        guard insertionGeneration == generation else { return }
+        inputsCollector.restore(inputs)
     }
 
     private func presentChat(

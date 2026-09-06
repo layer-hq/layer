@@ -199,6 +199,46 @@ struct InvocationInputsTests {
     }
 
     @Test
+    func restoreAfterTakeCurrentReusesSelectionAndScreen() async {
+        let collector = InvocationInputsCollector(
+            captureSelection: {
+                TextInsertionContext(
+                    element: nil,
+                    selectedText: "keep me",
+                    selectedRange: nil
+                )
+            },
+            copySelection: { _ in nil }
+        )
+        await collector.prepareForFocusSteal(
+            application: NSRunningApplication.current,
+            displayID: 8,
+            includeSelectedContent: true
+        )
+        let capture = ScreenContextCaptureStub(result: .success(
+            ScreenAttachment(imageData: Data([9]))
+        ))
+        let acquisition = ScreenContextAcquisition(capture: capture)
+        let first = await collector.takeCurrent(
+            capturingScreen: true,
+            using: acquisition
+        )
+        collector.restore(first)
+
+        let recapture = ScreenContextCaptureStub(result: .success(
+            ScreenAttachment(imageData: Data([7]))
+        ))
+        let second = await collector.takeCurrent(
+            capturingScreen: true,
+            using: ScreenContextAcquisition(capture: recapture)
+        )
+
+        #expect(second.modelContext.selectedContent == "keep me")
+        #expect(second.interactionTarget.displayID == 8)
+        #expect(second.modelContext.screen.attachment?.imageData == Data([9]))
+    }
+
+    @Test
     func takeCurrentAwaitsInFlightClipboardCapture() async {
         let collector = InvocationInputsCollector(
             captureSelection: {
