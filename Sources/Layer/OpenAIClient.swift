@@ -29,7 +29,7 @@ struct OpenAIClient: ChatResponseStreaming {
             let task = Task.detached {
                 do {
                     var body: [String: Any] = [
-                        "model": "gpt-5.4",
+                        "model": "gpt-5.6-terra",
                         "input": ModelContextPayload.chatInput(
                             prompt: chatRequest.prompt,
                             selectedContent: chatRequest.selectedContent,
