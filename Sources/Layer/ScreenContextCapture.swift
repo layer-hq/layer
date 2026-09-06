@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 struct ScreenAttachment: Equatable, Sendable {
     let imageData: Data
