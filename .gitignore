@@ -6,12 +6,14 @@ DerivedData/
 # Xcode user state
 *.xcuserdatad
 xcuserdata/
+.vscode/
 
 # macOS
 .DS_Store
 
 # Secrets and signing material — never commit these
 .env
+sparkle_private_key
 *.p12
 *.cer
 *.certSigningRequest
