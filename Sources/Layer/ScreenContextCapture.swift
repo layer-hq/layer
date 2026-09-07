@@ -284,6 +284,7 @@ struct ScreenSelectionSource {
         let item = NSPasteboardItem()
         item.setData(png, forType: .png)
         item.setData(tiff, forType: .tiff)
+        pasteboard.clearContents()
         guard pasteboard.writeObjects([item]) else {
             throw ScreenContextCaptureError.encodingFailed
         }
