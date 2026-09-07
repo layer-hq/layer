@@ -51,17 +51,20 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
   SIGNING_IDENTITY="-"
 fi
 
+CODESIGN_OPTIONS=(--force)
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  CODESIGN_OPTIONS+=(--options runtime)
+fi
+
 if [[ -d "$CONTENTS_DIR/Frameworks/WebRTC.framework" ]]; then
   codesign \
-    --force \
-    --options runtime \
+    "${CODESIGN_OPTIONS[@]}" \
     --sign "$SIGNING_IDENTITY" \
     "$CONTENTS_DIR/Frameworks/WebRTC.framework"
 fi
 
 codesign \
-  --force \
-  --options runtime \
+  "${CODESIGN_OPTIONS[@]}" \
   --entitlements "$ROOT_DIR/Resources/Layer.entitlements" \
   --sign "$SIGNING_IDENTITY" \
   "$APP_DIR"
