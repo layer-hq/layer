@@ -2,16 +2,70 @@ import AppKit
 import Combine
 import SwiftUI
 
-private struct SidebarMaterialView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
+@MainActor
+enum NotchMaterialFactory {
+    // NSGlassEffectView.Style.regular. Keep this as an integer because the
+    // class is only available dynamically with the project's current SDK.
+    private static let regularGlassStyle = 0
+
+    static func makeView(cornerRadius: CGFloat, contentView: NSView) -> NSView {
+        if #available(macOS 26.0, *),
+           let glassClass = NSClassFromString("NSGlassEffectView") as? NSObject.Type,
+           let glassView = glassClass.init() as? NSView {
+            glassView.setValue(cornerRadius, forKey: "cornerRadius")
+            glassView.setValue(regularGlassStyle, forKey: "style")
+            glassView.setValue(contentView, forKey: "contentView")
+            return glassView
+        }
+
         let view = NSVisualEffectView()
-        view.material = .underWindowBackground
-        view.blendingMode = .withinWindow
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
         view.state = .active
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentView)
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
         return view
     }
+}
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+private struct NotchMaterialView<Content: View>: NSViewRepresentable {
+    let cornerRadius: CGFloat
+    let content: Content
+
+    init(cornerRadius: CGFloat, @ViewBuilder content: () -> Content) {
+        self.cornerRadius = cornerRadius
+        self.content = content()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(content: content)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        NotchMaterialFactory.makeView(
+            cornerRadius: cornerRadius,
+            contentView: context.coordinator.hostingView
+        )
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.hostingView.rootView = content
+    }
+
+    @MainActor
+    final class Coordinator {
+        let hostingView: NSHostingView<Content>
+
+        init(content: Content) {
+            hostingView = NSHostingView(rootView: content)
+        }
+    }
 }
 
 private struct ControlTrayHeightPreferenceKey: PreferenceKey {
@@ -43,45 +97,47 @@ struct NotchView: View {
     var body: some View {
         GeometryReader { geometry in
             let isExpanded = session.isExpanded
+            let cornerRadius: CGFloat = 24
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-            VStack(spacing: 0) {
-                Color.clear.frame(height: topInset)
+            NotchMaterialView(cornerRadius: cornerRadius) {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: topInset)
 
-                controlTray(isExpanded: isExpanded)
-                    .frame(width: expandedWidth)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background {
-                        GeometryReader { trayGeometry in
-                            Color.clear.preference(
-                                key: ControlTrayHeightPreferenceKey.self,
-                                value: trayGeometry.size.height
-                            )
+                    controlTray(isExpanded: isExpanded)
+                        .frame(width: expandedWidth)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background {
+                            GeometryReader { trayGeometry in
+                                Color.clear.preference(
+                                    key: ControlTrayHeightPreferenceKey.self,
+                                    value: trayGeometry.size.height
+                                )
+                            }
                         }
+                        .opacity(isExpanded ? 1 : 0)
+                        .offset(y: isExpanded ? 0 : -8)
+                        .allowsHitTesting(isExpanded)
+                        .accessibilityHidden(!isExpanded)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .onHover { hovering in
+                    onHoverChange(hovering)
+                }
+                .onPreferenceChange(ControlTrayHeightPreferenceKey.self) { height in
+                    guard height > 0 else { return }
+                    onContentHeightChange(height)
+                }
+                .animation(.easeOut(duration: 0.1), value: isExpanded)
+                .animation(.easeOut(duration: 0.1), value: voiceMode.state)
+                .onChange(of: session.isGenerating) {
+                    if !session.isGenerating, !session.isExpanded {
+                        prompt = ""
                     }
-                    .opacity(isExpanded ? 1 : 0)
-                    .offset(y: isExpanded ? 0 : -8)
-                    .allowsHitTesting(isExpanded)
-                    .accessibilityHidden(!isExpanded)
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .background {
-                SidebarMaterialView()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .onHover { hovering in
-                onHoverChange(hovering)
-            }
-            .onPreferenceChange(ControlTrayHeightPreferenceKey.self) { height in
-                guard height > 0 else { return }
-                onContentHeightChange(height)
-            }
-            .animation(.easeOut(duration: 0.15), value: isExpanded)
-            .animation(.easeOut(duration: 0.15), value: voiceMode.state)
-            .onChange(of: session.isGenerating) {
-                if !session.isGenerating, !session.isExpanded {
-                    prompt = ""
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipShape(shape)
         }
     }
 
@@ -92,7 +148,6 @@ struct NotchView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 28, height: 28)
-                    .accessibilityLabel("Layer")
 
                 Spacer()
 
@@ -102,36 +157,18 @@ struct NotchView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button {
-                    onToggleVoice()
-                } label: {
-                    if voiceMode.state == .connecting {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 18, height: 18)
-                            .padding(7)
-                    } else {
-                        Image(systemName: voiceMode.isActive ? "mic.fill" : "mic")
-                            .font(.system(size: 16, weight: .medium))
-                            .frame(width: 18, height: 18)
-                            .padding(7)
-                    }
-                }
-                .buttonStyle(.automatic)
-                .help(voiceMode.isActive ? "Stop voice mode" : "Start voice mode")
-                .accessibilityLabel(
-                    voiceMode.isActive ? "Stop voice mode" : "Start voice mode"
+                Button(
+                    icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
+                    label: "Voice mode",
+                    showsProgress: voiceMode.state == .connecting,
+                    action: onToggleVoice
                 )
 
-                Button(action: showSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 16, weight: .medium))
-                        .frame(width: 18, height: 18)
-                        .padding(7)
-                }
-                .buttonStyle(.automatic)
-                .help("Settings")
-                .accessibilityLabel("Open Settings")
+                Button(
+                    icon: Image(systemName: "gearshape"),
+                    label: "Settings…",
+                    action: showSettings
+                )
             }
 
             if let notice = session.notice {
@@ -144,7 +181,7 @@ struct NotchView: View {
 
             if apiKey.isEmpty {
                 WarningBanner(message: "OpenAI API key is not present") {
-                    Button(action: showSettings) {
+                    SwiftUI.Button(action: showSettings) {
                         Text("Open Settings")
                     }
                     .controlSize(.small)
@@ -161,23 +198,19 @@ struct NotchView: View {
                 )
                 .disabled(voiceMode.isActive || session.isGenerating)
 
-                promptActionButton(
-                    title: "Chat",
-                    shortcut: "↩",
-                    help: "Open a conversation (Return)",
-                    fill: Color(nsColor: .systemGreen),
-                    shade: 0.32
+                Button(
+                    icon: Image(systemName: "bubble.left"),
+                    label: "Chat",
+                    shortcut: "↵",
                 ) {
                     submit(insertMode: false)
                 }
                 .disabled(!canSubmit)
 
-                promptActionButton(
-                    title: session.isGenerating ? "Inserting" : "Insert",
-                    shortcut: session.isGenerating ? nil : "⌘↩",
-                    help: "Insert at the cursor (⌘Return)",
-                    fill: Color.accentColor,
-                    shade: 0.18,
+                Button(
+                    icon: Image(systemName: "arrow.down.to.line"),
+                    label: session.isGenerating ? "Inserting" : "Insert",
+                    shortcut: session.isGenerating ? nil : "⌘ ↵",
                     showsProgress: session.isGenerating
                 ) {
                     submit(insertMode: true)
@@ -197,7 +230,7 @@ struct NotchView: View {
                     .help("May briefly use the clipboard when required.")
                     .accessibilityHint("May briefly use the clipboard when required.")
 
-                Button(action: onSelect) {
+                SwiftUI.Button(action: onSelect) {
                     HStack(spacing: 6) {
                         PhosphorIcon.selection
                             .resizable()
@@ -233,61 +266,6 @@ struct NotchView: View {
         onSubmitPrompt(trimmedPrompt, insertMode)
     }
 
-    private func promptActionButton(
-        title: String,
-        shortcut: String?,
-        help: String,
-        fill: Color,
-        shade: Double,
-        showsProgress: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                if showsProgress {
-                    ProgressView()
-                        .controlSize(.regular)
-                        .tint(.white)
-                }
-                Text(title)
-                    .font(.callout.weight(.semibold))
-                if let shortcut {
-                    Text(shortcut)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.black.opacity(0.28))
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(.white.opacity(0.32), lineWidth: 0.5)
-                        }
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(minWidth: 104)
-            .frame(maxHeight: .infinity)
-            .foregroundStyle(.white)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(fill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.black.opacity(shade))
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(.white.opacity(0.14), lineWidth: 0.5)
-        }
-        .help(help)
-        .accessibilityHint(help)
-    }
-
     private func showSettings() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         openSettings()
@@ -301,22 +279,22 @@ struct NotchView: View {
         WarningBanner(message: notice.message) {
             switch notice.recovery {
             case .screenRecordingSettings:
-                Button("System Settings", action: openScreenRecordingSettings)
+                SwiftUI.Button("System Settings", action: openScreenRecordingSettings)
                     .controlSize(.small)
             case .microphoneSettings:
-                Button("System Settings", action: openMicrophoneSettings)
+                SwiftUI.Button("System Settings", action: openMicrophoneSettings)
                     .controlSize(.small)
             case .accessibilitySettings:
-                Button("System Settings", action: openAccessibilitySettings)
+                SwiftUI.Button("System Settings", action: openAccessibilitySettings)
                     .controlSize(.small)
             case .settings:
-                Button("Open Settings", action: showSettings)
+                SwiftUI.Button("Open Settings", action: showSettings)
                     .controlSize(.small)
             case nil:
                 EmptyView()
             }
 
-            Button("Dismiss", action: dismiss)
+            SwiftUI.Button("Dismiss", action: dismiss)
                 .controlSize(.small)
         }
     }

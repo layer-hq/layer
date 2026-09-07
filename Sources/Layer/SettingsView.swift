@@ -96,7 +96,7 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveKey)
 
-                Button {
+                SwiftUI.Button {
                     isKeyVisible.toggle()
                 } label: {
                     Image(systemName: isKeyVisible ? "eye.slash" : "eye")
@@ -120,10 +120,10 @@ struct SettingsView: View {
                 Spacer()
 
                 if !savedAPIKey.isEmpty {
-                    Button("Remove Key", role: .destructive, action: removeKey)
+                    SwiftUI.Button("Remove Key", role: .destructive, action: removeKey)
                 }
 
-                Button("Save", action: saveKey)
+                SwiftUI.Button("Save", action: saveKey)
                     .keyboardShortcut(.defaultAction)
                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

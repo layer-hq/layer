@@ -74,7 +74,7 @@ struct WarningBanner<Actions: View>: View {
                 .font(.subheadline.weight(.medium))
                 .textSelection(.enabled)
 
-            Button {
+            SwiftUI.Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(message, forType: .string)
             } label: {

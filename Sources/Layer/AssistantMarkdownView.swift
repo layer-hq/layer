@@ -28,7 +28,7 @@ struct AssistantMarkdownView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Copy") {
+                SwiftUI.Button("Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(configuration.content, forType: .string)
                 }
