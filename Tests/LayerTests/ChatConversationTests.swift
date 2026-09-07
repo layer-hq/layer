@@ -21,7 +21,10 @@ struct ChatConversationTests {
 
         conversation.submit(
             " First turn ",
-            screenContext: ScreenContextOutcome(attachment: attachment, notice: nil)
+            modelContext: InvocationModelContext(
+                selectedContent: nil,
+                screen: ScreenContextOutcome(attachment: attachment, notice: nil)
+            )
         )
         await waitUntilSettled(conversation)
 
@@ -100,12 +103,53 @@ struct ChatConversationTests {
             )
         )
 
-        conversation.submit("Continue anyway", screenContext: outcome)
+        conversation.submit(
+            "Continue anyway",
+            modelContext: InvocationModelContext(selectedContent: nil, screen: outcome)
+        )
         await waitUntilSettled(conversation)
 
         #expect(conversation.messages.last?.content == "Answer")
         #expect(conversation.notice?.message == "Capture unavailable")
         #expect(conversation.notice?.recovery == .screenRecordingSettings)
+    }
+
+    @Test
+    func testFirstTurnReceivesSelectedContentAndScreenContext() async {
+        let responses = ChatResponseAdapterStub(
+            batches: [
+                .events([.textDelta("Answer"), .completed("done")]),
+                .events([.textDelta("Again"), .completed("second")])
+            ]
+        )
+        let conversation = ChatConversation(
+            credentials: ChatCredentialStub(value: "secret"),
+            responses: responses
+        )
+        let attachment = ScreenAttachment(imageData: Data([4, 5, 6]))
+
+        conversation.submit(
+            "Summarize this",
+            modelContext: InvocationModelContext(
+                selectedContent: "Highlighted paragraph",
+                screen: ScreenContextOutcome(attachment: attachment, notice: nil)
+            )
+        )
+        await waitUntilSettled(conversation)
+
+        #expect(conversation.messages.first?.content == "Summarize this")
+        #expect(responses.requests.first?.prompt == "Summarize this")
+        #expect(responses.requests.first?.selectedContent == "Highlighted paragraph")
+        #expect(
+            responses.requests.first?.screenAttachment?.imageData == attachment.imageData
+        )
+
+        conversation.draft = "Follow up"
+        conversation.submitDraft()
+        await waitUntilSettled(conversation)
+
+        #expect(responses.requests.last?.selectedContent == nil)
+        #expect(responses.requests.last?.screenAttachment == nil)
     }
 
     @Test

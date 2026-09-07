@@ -26,13 +26,8 @@ struct ChatView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Layer")
-                    .font(.headline)
-                Text("GPT-5.4")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Layer")
+                .font(.headline)
 
             Spacer()
 

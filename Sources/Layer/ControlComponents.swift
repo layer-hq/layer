@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import SwiftUI
 
@@ -71,6 +72,17 @@ struct WarningBanner<Actions: View>: View {
 
             Text(message)
                 .font(.subheadline.weight(.medium))
+                .textSelection(.enabled)
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .help("Copy")
 
             Spacer()
 
@@ -85,6 +97,7 @@ struct WarningBanner<Actions: View>: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                .allowsHitTesting(false)
         }
     }
 }

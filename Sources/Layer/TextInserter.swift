@@ -157,9 +157,9 @@ struct TextInsertionContext {
     func usingCopiedSelection(_ text: String?) -> TextInsertionContext {
         guard let text, !text.isEmpty else { return self }
         return TextInsertionContext(
-            element: nil,
+            element: element,
             selectedText: text,
-            selectedRange: nil
+            selectedRange: selectedRange
         )
     }
 
@@ -170,9 +170,18 @@ struct TextInsertionContext {
         let savedContents = snapshot(pasteboard)
         let initialChangeCount = pasteboard.changeCount
 
+        application.activate(options: [.activateAllWindows])
+        for _ in 0..<20 {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier
+                == application.processIdentifier {
+                break
+            }
+            try? await Task<Never, Never>.sleep(for: .milliseconds(10))
+        }
+
         // ponytail: editors that copy an unselected line are indistinguishable here.
         postCommand(0x08, to: application.processIdentifier)
-        for _ in 0..<20 {
+        for _ in 0..<50 {
             try? await Task<Never, Never>.sleep(for: .milliseconds(10))
             guard pasteboard.changeCount != initialChangeCount else { continue }
 

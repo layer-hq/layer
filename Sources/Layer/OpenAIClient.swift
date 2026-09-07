@@ -29,8 +29,12 @@ struct OpenAIClient: ChatResponseStreaming {
             let task = Task.detached {
                 do {
                     var body: [String: Any] = [
-                        "model": "gpt-5.4",
-                        "input": Self.input(for: chatRequest),
+                        "model": "gpt-5.6-terra",
+                        "input": ModelContextPayload.chatInput(
+                            prompt: chatRequest.prompt,
+                            selectedContent: chatRequest.selectedContent,
+                            screenAttachment: chatRequest.screenAttachment
+                        ),
                         "stream": true,
                         "store": true,
                         "tools": [["type": "web_search"]]
@@ -116,8 +120,6 @@ struct OpenAIClient: ChatResponseStreaming {
                         throw OpenAIClientError.streamEndedUnexpectedly
                     }
                     continuation.finish()
-                } catch is CancellationError {
-                    continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -127,29 +129,6 @@ struct OpenAIClient: ChatResponseStreaming {
                 task.cancel()
             }
         }
-    }
-
-    private nonisolated static func input(for request: ChatResponseRequest) -> Any {
-        guard let screenAttachment = request.screenAttachment else {
-            return request.prompt
-        }
-
-        return [
-            [
-                "role": "user",
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": request.prompt
-                    ],
-                    [
-                        "type": "input_image",
-                        "image_url": screenAttachment.dataURL,
-                        "detail": "auto"
-                    ]
-                ]
-            ]
-        ]
     }
 
     private nonisolated static var insertResponseFormat: [String: Any] {

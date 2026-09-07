@@ -24,13 +24,13 @@ class OverlayPanel: NSPanel {
 
 @MainActor
 final class EscapeKeyMonitor {
-    private static let escapeKeyCode: UInt16 = 53
+    static let keyCode: UInt16 = 53
 
     nonisolated(unsafe) private var monitor: Any?
 
     init(onEscape: @escaping @MainActor (NSWindow?) -> Bool) {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == Self.escapeKeyCode,
+            guard event.keyCode == Self.keyCode,
                   onEscape(event.window) else {
                 return event
             }

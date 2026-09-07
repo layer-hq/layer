@@ -30,7 +30,12 @@ final class VoiceModeController: NSObject, ObservableObject {
     private var dataChannel: RTCDataChannel?
     private var remoteAudioTrack: RTCAudioTrack?
     private var sessionTask: Task<Void, Never>?
-    private var didSendGreeting = false
+    private var pendingInputs: InvocationInputs?
+    private var pendingContextItemID: String?
+    private var openingTimeout: Task<Void, Never>?
+    private var assistantPlayback = false
+    private var echoGuardUntil = Date.distantPast
+    private var echoSpeech = false
     private let bluetoothPlaybackRoute = VoiceModeBluetoothPlaybackRoute()
 
     private static let factory: RTCPeerConnectionFactory = {
@@ -51,7 +56,7 @@ final class VoiceModeController: NSObject, ObservableObject {
         isActive ? stop() : start()
     }
 
-    func start() {
+    func start(inputs: InvocationInputs? = nil) {
         guard state == .idle else { return }
         guard let apiKey = credentials.loadCredential(), !apiKey.isEmpty else {
             notice = Notice(
@@ -62,7 +67,8 @@ final class VoiceModeController: NSObject, ObservableObject {
         }
 
         notice = nil
-        didSendGreeting = false
+        resetTurnState()
+        pendingInputs = inputs
         state = .connecting
         sessionTask = Task { [weak self] in
             guard let self else { return }
@@ -72,8 +78,7 @@ final class VoiceModeController: NSObject, ObservableObject {
                 }
                 try await connect(apiKey: apiKey)
                 try Task.checkCancellation()
-                state = .listening
-                sendGreetingIfNeeded()
+                sendOpeningMessagesIfNeeded()
             } catch is CancellationError {
                 return
             } catch {
@@ -94,12 +99,22 @@ final class VoiceModeController: NSObject, ObservableObject {
         peerConnection?.close()
         peerConnection = nil
         bluetoothPlaybackRoute.deactivate()
-        didSendGreeting = false
+        openingTimeout?.cancel()
+        openingTimeout = nil
+        pendingContextItemID = nil
+        resetTurnState()
+        pendingInputs = nil
         state = .idle
     }
 
     func dismissNotice() {
         notice = nil
+    }
+
+    private func resetTurnState() {
+        assistantPlayback = false
+        echoGuardUntil = .distantPast
+        echoSpeech = false
     }
 
     private func connect(apiKey: String) async throws {
@@ -123,7 +138,7 @@ final class VoiceModeController: NSObject, ObservableObject {
                 mandatoryConstraints: nil,
                 optionalConstraints: [
                     "googEchoCancellation": "true",
-                    "googAutoGainControl": "true",
+                    "googAutoGainControl": "false",
                     "googNoiseSuppression": "true"
                 ]
             )
@@ -179,8 +194,8 @@ final class VoiceModeController: NSObject, ObservableObject {
                                 "threshold": 0.5,
                                 "prefix_padding_ms": 300,
                                 "silence_duration_ms": 500,
-                                "create_response": true,
-                                "interrupt_response": true
+                                "create_response": false,
+                                "interrupt_response": false
                             ]
                         ],
                         "output": ["voice": "shimmer"]
@@ -324,20 +339,96 @@ final class VoiceModeController: NSObject, ObservableObject {
         )
     }
 
-    private func sendGreetingIfNeeded() {
-        guard !didSendGreeting, let dataChannel, dataChannel.readyState == .open else {
+    private func sendOpeningMessagesIfNeeded() {
+        guard state == .connecting,
+              pendingContextItemID == nil,
+              let dataChannel,
+              dataChannel.readyState == .open else {
             return
         }
-        didSendGreeting = true
-        let payload: [String: Any] = [
-            "type": "response.create",
-            "response": ["instructions": "Say a brief hi. Nothing else."]
-        ]
+
+        let context = pendingInputs?.modelContext
+        pendingInputs = nil
+        let hadImage = context?.screen.attachment != nil
+        var events = VoiceRealtimeOpening.contextEvents(from: context)
+        var sent = false
+
+        if hadImage, let event = events.first {
+            sent = send(event, on: dataChannel)
+            if !sent {
+                notice = Notice(
+                    message: "Screen context could not be sent to voice.",
+                    recovery: nil
+                )
+                events = VoiceRealtimeOpening.contextEvents(
+                    from: InvocationModelContext(
+                        selectedContent: context?.selectedContent,
+                        screen: .notRequested
+                    )
+                )
+            }
+        }
+
+        if !sent, let event = events.first {
+            sent = send(event, on: dataChannel)
+        }
+
+        if sent {
+            pendingContextItemID = VoiceRealtimeOpening.contextItemID
+            openingTimeout = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                } catch {
+                    return
+                }
+                self?.finishOpening()
+            }
+            return
+        }
+
+        finishOpening()
+    }
+
+    private func finishOpening() {
+        openingTimeout?.cancel()
+        openingTimeout = nil
+        pendingContextItemID = nil
+        if state == .connecting {
+            state = .listening
+        }
+    }
+
+    private var shouldIgnoreEcho: Bool {
+        state == .connecting || assistantPlayback || Date() < echoGuardUntil
+    }
+
+    private func beginAssistantPlayback() {
+        guard !assistantPlayback, state != .idle else { return }
+        assistantPlayback = true
+        state = .speaking
+    }
+
+    private func endAssistantPlayback() {
+        guard assistantPlayback else { return }
+        assistantPlayback = false
+        echoGuardUntil = Date().addingTimeInterval(0.4)
+        if let dataChannel {
+            send(["type": "input_audio_buffer.clear"], on: dataChannel)
+        }
+        if state == .speaking || state == .connecting {
+            state = .listening
+        }
+    }
+
+    @discardableResult
+    private func send(
+        _ payload: [String: Any],
+        on dataChannel: RTCDataChannel
+    ) -> Bool {
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
-            didSendGreeting = false
-            return
+            return false
         }
-        dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
     private static func microphoneAllowed() async -> Bool {
@@ -535,6 +626,33 @@ private final class VoiceModeBluetoothPlaybackRoute: @unchecked Sendable {
     }
 }
 
+enum VoiceRealtimeOpening {
+    static let contextItemID = "layer_invocation_context"
+
+    static func contextEvents(
+        from modelContext: InvocationModelContext?
+    ) -> [[String: Any]] {
+        guard let modelContext else { return [] }
+        let attachment = modelContext.screen.attachment?.constrainedForRealtime()
+        guard var item = ModelContextPayload.voiceConversationItem(
+            selectedContent: modelContext.selectedContent,
+            screenAttachment: attachment
+        ) else {
+            return []
+        }
+        item["event_id"] = contextItemID
+        if var payload = item["item"] as? [String: Any] {
+            payload["id"] = contextItemID
+            item["item"] = payload
+        }
+        return [item]
+    }
+
+    static func shouldIgnoreError(_ message: String) -> Bool {
+        message.localizedCaseInsensitiveContains("active response in progress")
+    }
+}
+
 private enum VoiceModeError: LocalizedError {
     case microphoneDenied
     case connection(String)
@@ -553,7 +671,7 @@ extension VoiceModeController: RTCDataChannelDelegate {
     nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
         guard dataChannel.readyState == .open else { return }
         Task { @MainActor [weak self] in
-            self?.sendGreetingIfNeeded()
+            self?.sendOpeningMessagesIfNeeded()
         }
     }
 
@@ -569,16 +687,54 @@ extension VoiceModeController: RTCDataChannelDelegate {
 
         switch type {
         case "input_audio_buffer.speech_started":
-            Task { @MainActor [weak self] in self?.state = .listening }
-        case "response.created":
-            Task { @MainActor [weak self] in self?.state = .speaking }
-        case "response.done":
-            Task { @MainActor [weak self] in self?.state = .listening }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.shouldIgnoreEcho {
+                    self.echoSpeech = true
+                    if let dataChannel = self.dataChannel {
+                        self.send(["type": "input_audio_buffer.clear"], on: dataChannel)
+                    }
+                    return
+                }
+                self.echoSpeech = false
+                self.state = .listening
+            }
+        case "input_audio_buffer.speech_stopped":
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.echoSpeech || self.shouldIgnoreEcho {
+                    self.echoSpeech = false
+                    return
+                }
+                guard let dataChannel = self.dataChannel else { return }
+                self.send(["type": "response.create"], on: dataChannel)
+            }
+        case "response.created", "output_audio_buffer.started":
+            Task { @MainActor [weak self] in self?.beginAssistantPlayback() }
+        case "output_audio_buffer.stopped", "output_audio_buffer.cleared", "response.done":
+            Task { @MainActor [weak self] in self?.endAssistantPlayback() }
+        case "conversation.item.created":
+            let itemID = (json["item"] as? [String: Any])?["id"] as? String
+            Task { @MainActor [weak self] in
+                guard let self, itemID == self.pendingContextItemID else { return }
+                self.finishOpening()
+            }
         case "error":
+            let eventID = (json["error"] as? [String: Any])?["event_id"] as? String
             let message = (json["error"] as? [String: Any])?["message"] as? String
                 ?? "OpenAI Realtime failed."
             Task { @MainActor [weak self] in
-                self?.fail(VoiceModeError.connection(message))
+                guard let self else { return }
+                if VoiceRealtimeOpening.shouldIgnoreError(message) {
+                    self.finishOpening()
+                    return
+                }
+                if self.pendingContextItemID != nil,
+                   eventID == nil || eventID == VoiceRealtimeOpening.contextItemID {
+                    self.finishOpening()
+                    return
+                }
+                self.fail(VoiceModeError.connection(message))
             }
         default:
             break
