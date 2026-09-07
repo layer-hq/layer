@@ -14,8 +14,9 @@ context.
 > or briefly via the clipboard if Accessibility cannot see it) and may send that
 > text to OpenAI with Chat, Voice, or Insert. When **Take screen context** is
 > enabled, starting Chat, Voice, or Insert captures the target display, excluding
-> Layer's own windows, and sends the image to OpenAI. **Select** sends only the
-> selected region. Both options are off by default.
+> Layer's own windows, and sends the image to OpenAI. Submitting **Select** to
+> Chat sends only the selected region. **Copy img** on Select writes that region
+> to the clipboard and does not send it to OpenAI. Both options are off by default.
 
 ## Privacy and permissions
 

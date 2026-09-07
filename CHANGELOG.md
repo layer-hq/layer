@@ -17,3 +17,5 @@ The first tagged release will move these entries under a `[0.1.0]` heading.
 
 - Hosted OpenAI web search on every Turn, so the model can use current
   information with the existing API key.
+- Copy img on Select writes the chosen region to the clipboard as PNG and TIFF
+  without opening Chat, then restores the previous app.

@@ -161,7 +161,7 @@ struct NotchView: View {
                 )
                 .disabled(voiceMode.isActive || session.isGenerating)
 
-                promptActionButton(
+                PromptActionButton(
                     title: "Chat",
                     shortcut: "↩",
                     help: "Open a conversation (Return)",
@@ -172,7 +172,7 @@ struct NotchView: View {
                 }
                 .disabled(!canSubmit)
 
-                promptActionButton(
+                PromptActionButton(
                     title: session.isGenerating ? "Inserting" : "Insert",
                     shortcut: session.isGenerating ? nil : "⌘↩",
                     help: "Insert at the cursor (⌘Return)",
@@ -231,61 +231,6 @@ struct NotchView: View {
             prompt = ""
         }
         onSubmitPrompt(trimmedPrompt, insertMode)
-    }
-
-    private func promptActionButton(
-        title: String,
-        shortcut: String?,
-        help: String,
-        fill: Color,
-        shade: Double,
-        showsProgress: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                if showsProgress {
-                    ProgressView()
-                        .controlSize(.regular)
-                        .tint(.white)
-                }
-                Text(title)
-                    .font(.callout.weight(.semibold))
-                if let shortcut {
-                    Text(shortcut)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.black.opacity(0.28))
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(.white.opacity(0.32), lineWidth: 0.5)
-                        }
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(minWidth: 104)
-            .frame(maxHeight: .infinity)
-            .foregroundStyle(.white)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(fill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.black.opacity(shade))
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(.white.opacity(0.14), lineWidth: 0.5)
-        }
-        .help(help)
-        .accessibilityHint(help)
     }
 
     private func showSettings() {
