@@ -142,27 +142,17 @@ private struct SelectionPromptView: View {
                 onCommandReturn: onCopy,
                 onSubmit: onSubmit
             )
-            PromptActionButton(
-                title: "Chat",
+            Button(
+                label: "Ask",
                 shortcut: "↩",
-                help: "Open a conversation (Return)",
-                fill: Color(nsColor: .systemGreen),
-                shade: 0.32,
-                minWidth: actionWidth
-            ) {
-                onSubmit(prompt)
-            }
+                action: { onSubmit(prompt) }
+            )
             .disabled(!canChat)
-            PromptActionButton(
-                title: "Copy img",
+            Button(
+                label: "Copy",
                 shortcut: "⌘↩",
-                help: "Copy selection to the clipboard (⌘Return)",
-                fill: Color.accentColor,
-                shade: 0.18,
-                minWidth: actionWidth
-            ) {
-                onCopy()
-            }
+                action: { onCopy() }
+            )
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(10)

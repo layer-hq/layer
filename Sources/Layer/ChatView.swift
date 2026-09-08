@@ -31,7 +31,7 @@ struct ChatView: View {
 
             Spacer()
 
-            Button("New Chat") {
+            SwiftUI.Button("New Chat") {
                 conversation.startNewConversation()
             }
             .disabled(conversation.messages.isEmpty)
@@ -84,7 +84,7 @@ struct ChatView: View {
         WarningBanner(message: notice.message) {
             Group {
                 if notice.recovery == .screenRecordingSettings {
-                    Button("System Settings") {
+                    SwiftUI.Button("System Settings") {
                         onOpenScreenRecordingSettings()
                     }
                 } else if notice.recovery == .settings {
@@ -95,7 +95,7 @@ struct ChatView: View {
             }
             .controlSize(.small)
 
-            Button {
+            SwiftUI.Button {
                 conversation.dismissNotice()
             } label: {
                 Image(systemName: "xmark")
@@ -115,7 +115,7 @@ struct ChatView: View {
                     conversation.submitDraft()
                 }
 
-            Button {
+            SwiftUI.Button {
                 conversation.submitDraft()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")

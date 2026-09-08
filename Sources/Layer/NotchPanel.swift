@@ -91,7 +91,6 @@ final class NotchPanel: OverlayPanel {
             rootView: NotchView(
                 session: session,
                 voiceMode: voiceMode,
-                topInset: layout.obscuredHeight,
                 expandedWidth: layout.expandedSize.width,
                 promptFocusRequests: promptFocusRequests.eraseToAnyPublisher(),
                 onHoverChange: { [weak self] hovering in
@@ -309,10 +308,7 @@ final class NotchPanel: OverlayPanel {
         guard var layout = currentLayout else { return }
 
         let availableHeight = layout.obscuredHeight + layout.screen.visibleFrame.height
-        let expandedHeight = min(
-            availableHeight,
-            layout.obscuredHeight + ceil(contentHeight)
-        )
+        let expandedHeight = min(availableHeight, ceil(contentHeight))
         guard abs(layout.expandedSize.height - expandedHeight) > 0.5 else {
             return
         }
@@ -348,7 +344,7 @@ final class NotchPanel: OverlayPanel {
             collapsedSize: NSSize(width: notchWidth, height: obscuredHeight + 2),
             expandedSize: NSSize(
                 width: min(720, screen.visibleFrame.width - 32),
-                height: obscuredHeight + 190
+                height: 190
             )
         )
     }

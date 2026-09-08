@@ -89,6 +89,6 @@ The bundle identifier is `use.layer.app`.
 
 Layer is released under the MIT License; see [LICENSE](LICENSE).
 
-Bundled dependencies and Phosphor Icons ship under their own permissive
+Bundled dependencies ship under their own permissive
 licenses, reproduced in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). That
 file must accompany a distributed `Layer.app`.
