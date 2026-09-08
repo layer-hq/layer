@@ -41,6 +41,9 @@ final class ScreenSelectionOverlayController: NSWindowController {
                 },
                 onSubmit: { [weak self] prompt, selection in
                     self?.submit(prompt: prompt, selection: selection, source: source)
+                },
+                onCopy: { [weak self] selection in
+                    self?.copySelection(selection, source: source)
                 }
             )
         }
@@ -99,6 +102,17 @@ final class ScreenSelectionOverlayController: NSWindowController {
         }
     }
 
+    private func copySelection(_ selection: CGRect, source: ScreenSelectionSource) {
+        do {
+            try source.copyImage(for: selection)
+            closeOverlay()
+            onCancel()
+        } catch {
+            closeOverlay()
+            onFailure(error)
+        }
+    }
+
     private static func makePanel(covering frame: CGRect) -> OverlayPanel {
         let panel = OverlayPanel(contentRect: frame, level: .screenSaver)
         panel.hasShadow = false
@@ -111,15 +125,46 @@ private struct SelectionPromptView: View {
     @State private var prompt = ""
     let focusRequests: AnyPublisher<Void, Never>
     let onSubmit: (String) -> Void
+    let onCopy: () -> Void
+
+    private var canChat: Bool {
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
-        PromptField(
-            text: $prompt,
-            placeholder: "Ask about this selection",
-            shouldFocus: true,
-            focusRequests: focusRequests,
-            onSubmit: onSubmit
-        )
+        let actionWidth: CGFloat = 132
+        HStack(spacing: 8) {
+            PromptField(
+                text: $prompt,
+                placeholder: "Ask about this selection",
+                shouldFocus: true,
+                focusRequests: focusRequests,
+                onCommandReturn: onCopy,
+                onSubmit: onSubmit
+            )
+            PromptActionButton(
+                title: "Chat",
+                shortcut: "↩",
+                help: "Open a conversation (Return)",
+                fill: Color(nsColor: .systemGreen),
+                shade: 0.32,
+                minWidth: actionWidth
+            ) {
+                onSubmit(prompt)
+            }
+            .disabled(!canChat)
+            PromptActionButton(
+                title: "Copy img",
+                shortcut: "⌘↩",
+                help: "Copy selection to the clipboard (⌘Return)",
+                fill: Color.accentColor,
+                shade: 0.18,
+                minWidth: actionWidth
+            ) {
+                onCopy()
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
@@ -141,6 +186,7 @@ private final class ScreenSelectionView: NSView {
     private let minimumSelectionSize: CGFloat = 32
     private let onActivate: () -> Void
     private let onSubmit: (String, CGRect) -> Void
+    private let onCopy: (CGRect) -> Void
     private var selection: CGRect?
     private var dragAction: DragAction = .create
     private var dragStart = CGPoint.zero
@@ -150,10 +196,12 @@ private final class ScreenSelectionView: NSView {
 
     init(
         onActivate: @escaping () -> Void,
-        onSubmit: @escaping (String, CGRect) -> Void
+        onSubmit: @escaping (String, CGRect) -> Void,
+        onCopy: @escaping (CGRect) -> Void
     ) {
         self.onActivate = onActivate
         self.onSubmit = onSubmit
+        self.onCopy = onCopy
         super.init(frame: .zero)
     }
 
@@ -273,7 +321,7 @@ private final class ScreenSelectionView: NSView {
     }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .crosshair)
+        addCursorRect(bounds, cursor: selection == nil ? .crosshair : .arrow)
         guard let selection else { return }
 
         addCursorRect(selection, cursor: .openHand)
@@ -296,6 +344,10 @@ private final class ScreenSelectionView: NSView {
                         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
                         self.onSubmit(trimmed, selection)
+                    },
+                    onCopy: { [weak self] in
+                        guard let self, let selection = self.selection else { return }
+                        self.onCopy(selection)
                     }
                 )
             )
@@ -316,7 +368,7 @@ private final class ScreenSelectionView: NSView {
         let margin: CGFloat = 12
         let gap: CGFloat = 8
         let height: CGFloat = 76
-        let width = min(520, max(280, selection.width))
+        let width = min(760, max(560, selection.width))
         let x = min(
             max(margin, selection.midX - width / 2),
             bounds.maxX - width - margin

@@ -268,6 +268,29 @@ struct ScreenSelectionSource {
     }
 
     func attachment(for selection: CGRect) throws -> ScreenAttachment {
+        try SystemScreenContextCapture.makeAttachment(from: croppedImage(for: selection))
+    }
+
+    func copyImage(
+        for selection: CGRect,
+        to pasteboard: NSPasteboard = .general
+    ) throws {
+        let bitmap = NSBitmapImageRep(cgImage: try croppedImage(for: selection))
+        guard let png = bitmap.representation(using: .png, properties: [:]),
+              let tiff = bitmap.representation(using: .tiff, properties: [:]) else {
+            throw ScreenContextCaptureError.encodingFailed
+        }
+
+        let item = NSPasteboardItem()
+        item.setData(png, forType: .png)
+        item.setData(tiff, forType: .tiff)
+        pasteboard.clearContents()
+        guard pasteboard.writeObjects([item]) else {
+            throw ScreenContextCaptureError.encodingFailed
+        }
+    }
+
+    private func croppedImage(for selection: CGRect) throws -> CGImage {
         let cropRect = ScreenSelectionGeometry.cropRect(
             selection: selection,
             screenSize: screen.frame.size,
@@ -275,11 +298,10 @@ struct ScreenSelectionSource {
         )
         guard cropRect.width > 0,
               cropRect.height > 0,
-              let croppedImage = image.cropping(to: cropRect) else {
+              let cropped = image.cropping(to: cropRect) else {
             throw ScreenContextCaptureError.captureFailed
         }
-
-        return try SystemScreenContextCapture.makeAttachment(from: croppedImage)
+        return cropped
     }
 }
 
