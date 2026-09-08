@@ -10,6 +10,9 @@ struct AssistantMarkdownView: View {
     var body: some View {
         Markdown(content)
             .textSelection(.enabled)
+            .markdownTextStyle {
+                FontSize(ChatTypography.messageFontSize)
+            }
             .environment(\.openURL, OpenURLAction { url in
                 allowsMarkdownOpenURL(url) ? .systemAction : .discarded
             })

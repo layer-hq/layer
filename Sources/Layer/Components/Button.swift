@@ -44,27 +44,28 @@ struct Button: View {
                         .opacity(0.5)
                 }
             }
-            .padding(.horizontal, 15)
-            .frame(height: 32, alignment: .center)
+            .padding(.horizontal, isIconOnly ? 0 : 15)
+            .frame(
+                width: isIconOnly ? 32 : nil,
+                height: 32,
+                alignment: .center
+            )
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .foregroundStyle(foregroundTint)
-        .background {
-            Capsule()
-                .fill(backgroundTint)
-                .overlay {
-                    Capsule()
-                        .strokeBorder(Color.accentColor, lineWidth: 2)
-                        .opacity(isFocused ? 1 : 0)
-                }
-        }
+        .background { buttonBackground }
         .focused($isFocused)
         .focusEffectDisabled()
         .onHover { isHovering = $0 }
+        .arrowCursor()
         .opacity(isEnabled ? 1 : 0.5)
         .animation(.easeOut(duration: 0.1), value: isHovering)
         .animation(.easeOut(duration: 0.1), value: isFocused)
+    }
+
+    private var isIconOnly: Bool {
+        icon != nil && label == nil && shortcut == nil
     }
 
     private var buttonTint: Color {
@@ -91,8 +92,30 @@ struct Button: View {
             return buttonTint.opacity(isHovering ? 0.78 : 0.92)
         }
         if isSelected {
-            return Color.accentColor.opacity(isHovering ? 0.26 : 0.18)
+            return Color.accentColor.opacity(isHovering ? 0.34 : 0.26)
         }
-        return buttonTint.opacity(isHovering ? 0.2 : 0.1)
+        return buttonTint.opacity(isHovering ? 0.28 : 0.16)
+    }
+
+    @ViewBuilder
+    private var buttonBackground: some View {
+        if appearance == .filled {
+            Capsule()
+                .fill(backgroundTint)
+                .overlay { focusRing }
+        } else {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Capsule().fill(backgroundTint)
+                }
+                .overlay { focusRing }
+        }
+    }
+
+    private var focusRing: some View {
+        Capsule()
+            .strokeBorder(Color.accentColor, lineWidth: 2)
+            .opacity(isFocused ? 1 : 0)
     }
 }
