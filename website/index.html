@@ -178,6 +178,45 @@
         margin-right: 8px;
       }
 
+      .star-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .star-link i {
+        font-size: 18px;
+        margin-right: 0;
+      }
+
+      .star-count {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border: 1px solid #e5e5e2;
+        border-radius: 999px;
+        background: white;
+        font-size: 13px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.6;
+      }
+
+      .star-count::before {
+        content: "\2605";
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      .button-secondary .star-count {
+        background: #f7f7f5;
+      }
+
+      .button-secondary:hover .star-count {
+        background: white;
+      }
+
       .feature h2 {
         margin: 0 0 12px;
         font-family: "Instrument Serif", Georgia, serif;
@@ -275,12 +314,14 @@
               ><span>Layer</span></a
             >
             <a
-              class="nav-link"
+              class="nav-link star-link"
               href="https://github.com/layer-hq/layer"
               target="_blank"
               rel="noreferrer"
             >
-              <i class="ph ph-github-logo" aria-hidden="true"></i> GitHub
+              <i class="ph ph-github-logo" aria-hidden="true"></i>
+              <span>Star on GitHub</span>
+              <span class="star-count" data-star-count hidden></span>
             </a>
           </nav>
         </div>
@@ -310,13 +351,14 @@
                 Mac
               </a>
               <a
-                class="button button-secondary"
+                class="button button-secondary star-link"
                 href="https://github.com/layer-hq/layer"
                 target="_blank"
                 rel="noreferrer"
               >
-                <i class="ph ph-github-logo" aria-hidden="true"></i> View on
-                GitHub
+                <i class="ph ph-github-logo" aria-hidden="true"></i>
+                <span>Star on GitHub</span>
+                <span class="star-count" data-star-count hidden></span>
               </a>
             </div>
           </section>
@@ -373,5 +415,74 @@
         </main>
       </div>
     </div>
+
+    <script>
+      // Live star count from the GitHub REST API.
+      // https://docs.github.com/en/rest/repos/repos#get-a-repository
+      (function () {
+        var REPO = "layer-hq/layer";
+        var CACHE_KEY = "layer:stars";
+        var CACHE_TTL = 60 * 60 * 1000; // 1 hour — unauthenticated API is rate limited.
+
+        function format(count) {
+          if (count >= 10000) return (count / 1000).toFixed(0) + "k";
+          if (count >= 1000) return (count / 1000).toFixed(1) + "k";
+          return String(count);
+        }
+
+        function render(count) {
+          if (typeof count !== "number" || !isFinite(count)) return;
+          var nodes = document.querySelectorAll("[data-star-count]");
+          for (var i = 0; i < nodes.length; i++) {
+            nodes[i].textContent = format(count);
+            nodes[i].hidden = false;
+          }
+        }
+
+        function readCache() {
+          try {
+            var raw = localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            var cached = JSON.parse(raw);
+            if (Date.now() - cached.at > CACHE_TTL) return null;
+            return cached.count;
+          } catch (error) {
+            return null;
+          }
+        }
+
+        function writeCache(count) {
+          try {
+            localStorage.setItem(
+              CACHE_KEY,
+              JSON.stringify({ count: count, at: Date.now() })
+            );
+          } catch (error) {
+            /* storage unavailable — the count just isn't cached. */
+          }
+        }
+
+        var cached = readCache();
+        if (cached !== null) {
+          render(cached);
+          return;
+        }
+
+        fetch("https://api.github.com/repos/" + REPO, {
+          headers: { Accept: "application/vnd.github+json" },
+        })
+          .then(function (response) {
+            if (!response.ok) throw new Error("GitHub API " + response.status);
+            return response.json();
+          })
+          .then(function (repo) {
+            render(repo.stargazers_count);
+            writeCache(repo.stargazers_count);
+          })
+          .catch(function () {
+            /* Leave the count hidden; the link still works. */
+          });
+      })();
+    </script>
   </body>
 </html>
