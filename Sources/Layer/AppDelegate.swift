@@ -42,7 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.showNotch() }
+            MainActor.assumeIsolated {
+                self?.showNotch()
+                self?.showDesignPreviewIfRequested()
+            }
         }
     }
 
@@ -348,8 +351,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inputs: InvocationInputs
     ) {
         let applicationToRestore = inputs.interactionTarget.application
+        let controller = makeChatWindowController(
+            applicationToRestore: applicationToRestore
+        )
+        controller.show(
+            with: prompt,
+            modelContext: inputs.modelContext
+        )
+    }
 
+    private func showDesignPreviewIfRequested() {
+        guard ProcessInfo.processInfo.environment["LAYER_DESIGN_PREVIEW"] == "1"
+        else { return }
+
+        let conversation = ChatConversation(
+            initialMessages: [
+                ChatMessage(
+                    role: .user,
+                    content: "Can you turn these notes into a concise launch plan?"
+                ),
+                ChatMessage(
+                    role: .assistant,
+                    content: """
+                        Absolutely — here’s a focused launch plan:
+
+                        1. **Polish the core flow** and fix anything that blocks a first-time user.
+                        2. **Invite a small beta group** and watch where they hesitate.
+                        3. **Ship the clearest improvements**, then open the launch to everyone.
+
+                        Keep the first release narrow, learn quickly, and let real usage guide what comes next.
+                        """
+                )
+            ]
+        )
+        let controller = makeChatWindowController(
+            conversation: conversation,
+            applicationToRestore: nil
+        )
+        controller.showPreview()
+    }
+
+    private func makeChatWindowController(
+        conversation: ChatConversation = ChatConversation(),
+        applicationToRestore: NSRunningApplication?
+    ) -> ChatWindowController {
         let controller = ChatWindowController(
+            conversation: conversation,
             onOpenScreenRecordingSettings: {
                 openScreenRecordingSettings()
             }
@@ -367,10 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         chatWindowControllers.append(controller)
-        controller.show(
-            with: prompt,
-            modelContext: inputs.modelContext
-        )
+        return controller
     }
 
     private func frontmostExternalApplication() -> NSRunningApplication? {

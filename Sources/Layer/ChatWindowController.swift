@@ -4,15 +4,16 @@ import SwiftUI
 
 @MainActor
 final class ChatWindowController: NSWindowController, NSWindowDelegate {
-    private let conversation = ChatConversation()
+    private let conversation: ChatConversation
     private let composerFocusRequests = PassthroughSubject<Void, Never>()
     private var escapeKeyMonitor: EscapeKeyMonitor?
     var onClose: (() -> Void)?
 
     init(
+        conversation: ChatConversation = ChatConversation(),
         onOpenScreenRecordingSettings: @escaping () -> Void
     ) {
-        let conversation = self.conversation
+        self.conversation = conversation
         let composerFocusRequests = self.composerFocusRequests
         let hostingController = NSHostingController(
             rootView: ChatView(
@@ -52,10 +53,18 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
         with prompt: String,
         modelContext: InvocationModelContext
     ) {
+        presentWindow()
+        conversation.submit(prompt, modelContext: modelContext)
+    }
+
+    func showPreview() {
+        presentWindow()
+    }
+
+    private func presentWindow() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        conversation.submit(prompt, modelContext: modelContext)
     }
 
     func windowWillClose(_ notification: Notification) {

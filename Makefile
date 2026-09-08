@@ -7,7 +7,7 @@ build:
 
 run: stop
 	$(MAKE) build
-	open .build/Layer.app
+	open --env LAYER_DESIGN_PREVIEW=1 .build/Layer.app
 
 dev:
 	./scripts/dev.sh
