@@ -4,9 +4,10 @@ import SwiftUI
 
 @MainActor
 enum NotchMaterialFactory {
-    // NSGlassEffectView.Style.regular. Keep this as an integer because the
-    // class is only available dynamically with the project's current SDK.
     private static let regularGlassStyle = 0
+
+    private static let adaptiveAppearanceOff = 1
+    private static let adaptiveAppearanceSetter = Selector(("set_adaptiveAppearance:"))
 
     static func makeView(cornerRadius: CGFloat, contentView: NSView) -> NSView {
         if #available(macOS 26.0, *),
@@ -15,6 +16,12 @@ enum NotchMaterialFactory {
             glassView.setValue(cornerRadius, forKey: "cornerRadius")
             glassView.setValue(regularGlassStyle, forKey: "style")
             glassView.setValue(contentView, forKey: "contentView")
+            if glassView.responds(to: adaptiveAppearanceSetter) {
+                glassView.setValue(
+                    NSNumber(value: adaptiveAppearanceOff),
+                    forKey: "_adaptiveAppearance"
+                )
+            }
             return glassView
         }
 
@@ -80,7 +87,6 @@ struct NotchView: View {
     @Environment(\.openSettings) private var openSettings
     @ObservedObject var session: NotchSession
     @ObservedObject var voiceMode: VoiceModeController
-    let topInset: CGFloat
     let expandedWidth: CGFloat
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
@@ -93,6 +99,7 @@ struct NotchView: View {
     @AppStorage("openAIAPIKey") private var apiKey = ""
     @AppStorage("takeScreenContext") private var takeScreenContext = false
     @AppStorage("includeSelectedContent") private var includeSelectedContent = false
+    @State private var promptIsFocused = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -101,40 +108,40 @@ struct NotchView: View {
             let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
             NotchMaterialView(cornerRadius: cornerRadius) {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: topInset)
-
-                    controlTray(isExpanded: isExpanded)
-                        .frame(width: expandedWidth)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .background {
-                            GeometryReader { trayGeometry in
-                                Color.clear.preference(
-                                    key: ControlTrayHeightPreferenceKey.self,
-                                    value: trayGeometry.size.height
-                                )
-                            }
+                controlTray(isExpanded: isExpanded)
+                    .frame(width: expandedWidth)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background {
+                        GeometryReader { trayGeometry in
+                            Color.clear.preference(
+                                key: ControlTrayHeightPreferenceKey.self,
+                                value: trayGeometry.size.height
+                            )
                         }
-                        .opacity(isExpanded ? 1 : 0)
-                        .offset(y: isExpanded ? 0 : -8)
-                        .allowsHitTesting(isExpanded)
-                        .accessibilityHidden(!isExpanded)
-                }
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .onHover { hovering in
-                    onHoverChange(hovering)
-                }
-                .onPreferenceChange(ControlTrayHeightPreferenceKey.self) { height in
-                    guard height > 0 else { return }
-                    onContentHeightChange(height)
-                }
-                .animation(.easeOut(duration: 0.1), value: isExpanded)
-                .animation(.easeOut(duration: 0.1), value: voiceMode.state)
-                .onChange(of: session.isGenerating) {
-                    if !session.isGenerating, !session.isExpanded {
-                        prompt = ""
                     }
-                }
+                    .opacity(isExpanded ? 1 : 0)
+                    .offset(y: isExpanded ? 0 : -8)
+                    .allowsHitTesting(isExpanded)
+                    .accessibilityHidden(!isExpanded)
+                    .frame(
+                        width: geometry.size.width,
+                        height: geometry.size.height,
+                        alignment: .top
+                    )
+                    .onHover { hovering in
+                        onHoverChange(hovering)
+                    }
+                    .onPreferenceChange(ControlTrayHeightPreferenceKey.self) { height in
+                        guard height > 0 else { return }
+                        onContentHeightChange(height)
+                    }
+                    .animation(.easeOut(duration: 0.1), value: isExpanded)
+                    .animation(.easeOut(duration: 0.1), value: voiceMode.state)
+                    .onChange(of: session.isGenerating) {
+                        if !session.isGenerating, !session.isExpanded {
+                            prompt = ""
+                        }
+                    }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipShape(shape)
@@ -144,7 +151,7 @@ struct NotchView: View {
     private func controlTray(isExpanded: Bool) -> some View {
         VStack(spacing: 18) {
             HStack(spacing: 10) {
-                PhosphorIcon.layerLogo
+                AppIcon.layerLogo
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 28, height: 28)
@@ -156,13 +163,6 @@ struct NotchView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
-                Button(
-                    icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
-                    label: "Voice mode",
-                    showsProgress: voiceMode.state == .connecting,
-                    action: onToggleVoice
-                )
 
                 Button(
                     icon: Image(systemName: "gearshape"),
@@ -188,67 +188,99 @@ struct NotchView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                PromptField(
-                    text: $prompt,
-                    shouldFocus: isExpanded && !voiceMode.isActive && !session.isGenerating,
-                    focusRequests: promptFocusRequests,
-                    onCommandReturn: { submit(insertMode: true) },
-                    onSubmit: { _ in submit(insertMode: false) }
-                )
-                .disabled(voiceMode.isActive || session.isGenerating)
-
-                Button(
-                    icon: Image(systemName: "bubble.left"),
-                    label: "Chat",
-                    shortcut: "↵",
-                ) {
-                    submit(insertMode: false)
-                }
-                .disabled(!canSubmit)
-
-                Button(
-                    icon: Image(systemName: "arrow.down.to.line"),
-                    label: session.isGenerating ? "Inserting" : "Insert",
-                    shortcut: session.isGenerating ? nil : "⌘ ↵",
-                    showsProgress: session.isGenerating
-                ) {
-                    submit(insertMode: true)
-                }
-                .disabled(!canSubmit && !session.isGenerating)
-                .allowsHitTesting(!session.isGenerating)
-                .accessibilityLabel(session.isGenerating ? "Generating" : "Insert")
-            }
-
-            HStack(spacing: 12) {
-                Toggle("Take screen context", isOn: $takeScreenContext)
-                    .toggleStyle(.checkbox)
+            PromptField(
+                text: $prompt,
+                shouldFocus: isExpanded && !voiceMode.isActive && !session.isGenerating,
+                focusRequests: promptFocusRequests,
+                onCommandReturn: { submit(insertMode: true) },
+                showsChrome: false,
+                lineLimit: 1...5,
+                textInsets: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
+                minTextHeight: 62,
+                isDisabled: voiceMode.isActive || session.isGenerating,
+                onFocusChange: { promptIsFocused = $0 },
+                onSubmit: { _ in submit(insertMode: false) }
+            ) {
+                HStack(spacing: 8) {
+                    Button(
+                        icon: Image(systemName: "display"),
+                        label: "Entire screen",
+                        isSelected: takeScreenContext
+                    ) {
+                        takeScreenContext.toggle()
+                    }
+                    .disabled(session.isGenerating)
                     .accessibilityHint("Include information from the screen with the prompt")
 
-                Toggle("Include selected content", isOn: $includeSelectedContent)
-                    .toggleStyle(.checkbox)
+                    Button(
+                        icon: Image(systemName: "text.quote"),
+                        label: "Selected text",
+                        isSelected: includeSelectedContent
+                    ) {
+                        includeSelectedContent.toggle()
+                    }
+                    .disabled(session.isGenerating)
                     .help("May briefly use the clipboard when required.")
                     .accessibilityHint("May briefly use the clipboard when required.")
 
-                SwiftUI.Button(action: onSelect) {
-                    HStack(spacing: 6) {
-                        PhosphorIcon.selection
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 14, height: 14)
-                        Text("Select")
+                    Spacer(minLength: 8)
+
+                    Button(
+                        label: "Ask",
+                        shortcut: "↵",
+                        appearance: .filled
+                    ) {
+                        submit(insertMode: false)
                     }
+                    .disabled(!canSubmit)
+
+                    Button(
+                        label: session.isGenerating ? "Inserting" : "Insert",
+                        shortcut: session.isGenerating ? nil : "⌘ ↵",
+                        showsProgress: session.isGenerating,
+                        appearance: .filled
+                    ) {
+                        submit(insertMode: true)
+                    }
+                    .disabled(!canSubmit && !session.isGenerating)
+                    .allowsHitTesting(!session.isGenerating)
+                    .accessibilityLabel(session.isGenerating ? "Generating" : "Insert")
                 }
-                .controlSize(.small)
-                .disabled(session.isGenerating)
-                .accessibilityHint("Enter select mode")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.34))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        promptIsFocused ? Color.accentColor : Color(nsColor: .separatorColor),
+                        lineWidth: promptIsFocused ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeOut(duration: 0.1), value: promptIsFocused)
+
+            HStack(spacing: 10) {
+                Button(
+                        icon: Image(systemName: "viewfinder"),
+                        label: "Select area…",
+                        action: onSelect
+                    )
+                    .disabled(session.isGenerating)
+                    .accessibilityHint("Enter select mode")
 
                 Spacer()
+
+                Button(
+                    icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
+                    label: "Voice mode",
+                    showsProgress: voiceMode.state == .connecting,
+                    action: onToggleVoice
+                )
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, 18)
+        .padding(18)
     }
 
     private var canSubmit: Bool {

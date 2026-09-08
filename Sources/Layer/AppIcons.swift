@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum PhosphorIcon {
-    static let selection = image(named: "selection")
+enum AppIcon {
     static let layerLogo = image(named: "logo", isTemplate: false)
 
     private static let resourceRoot: URL = {
@@ -16,13 +15,13 @@ enum PhosphorIcon {
     }()
 
     private static func image(named name: String, isTemplate: Bool = true) -> Image {
-        let subdirectory = "Phosphor.xcassets/\(name).imageset"
+        let subdirectory = "Assets.xcassets/\(name).imageset"
         let url = resourceRoot
             .appendingPathComponent(subdirectory)
             .appendingPathComponent("\(name).svg")
 
         guard let image = NSImage(contentsOf: url) else {
-            assertionFailure("Missing Phosphor icon: \(name)")
+            assertionFailure("Missing app icon: \(name)")
             return Image(systemName: "questionmark.square.dashed")
         }
 
