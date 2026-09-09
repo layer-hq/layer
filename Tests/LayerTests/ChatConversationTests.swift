@@ -6,6 +6,25 @@ import Testing
 @MainActor
 struct ChatConversationTests {
     @Test
+    func testInitialMessagesPopulateConversationWithoutStartingAResponse() {
+        let messages = [
+            ChatMessage(role: .user, content: "Preview question"),
+            ChatMessage(role: .assistant, content: "Preview answer")
+        ]
+        let responses = ChatResponseAdapterStub(batches: [])
+
+        let conversation = ChatConversation(
+            initialMessages: messages,
+            credentials: ChatCredentialStub(value: nil),
+            responses: responses
+        )
+
+        #expect(conversation.messages == messages)
+        #expect(!conversation.isResponding)
+        #expect(responses.requests.isEmpty)
+    }
+
+    @Test
     func testTurnStreamsThroughConversationInterfaceAndContinues() async {
         let responses = ChatResponseAdapterStub(
             batches: [

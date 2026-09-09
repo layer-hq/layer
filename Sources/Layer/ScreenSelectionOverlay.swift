@@ -132,7 +132,6 @@ private struct SelectionPromptView: View {
     }
 
     var body: some View {
-        let actionWidth: CGFloat = 132
         HStack(spacing: 8) {
             PromptField(
                 text: $prompt,

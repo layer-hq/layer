@@ -14,31 +14,49 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
     ) {
         let conversation = self.conversation
         let composerFocusRequests = self.composerFocusRequests
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 480),
+            styleMask: [
+                .titled,
+                .closable,
+                .miniaturizable,
+                .resizable,
+                .fullSizeContentView
+            ],
+            backing: .buffered,
+            defer: false
+        )
         let hostingController = NSHostingController(
             rootView: ChatView(
                 conversation: conversation,
                 composerFocusRequests: composerFocusRequests.eraseToAnyPublisher(),
-                onOpenScreenRecordingSettings: onOpenScreenRecordingSettings
+                onOpenScreenRecordingSettings: onOpenScreenRecordingSettings,
+                onClose: { [weak window] in window?.close() },
+                onScrollButtonVisibilityChange: nil
             )
         )
-        let window = NSWindow(contentViewController: hostingController)
+        window.contentViewController = hostingController
         window.title = "Layer"
-        window.styleMask = [
-            .titled,
-            .closable,
-            .miniaturizable,
-            .resizable
-        ]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 680, height: 700))
-        window.minSize = NSSize(width: 560, height: 520)
+        window.setContentSize(NSSize(width: 360, height: 480))
+        window.minSize = NSSize(width: 360, height: 480)
         window.center()
 
         super.init(window: window)
         window.delegate = self
         escapeKeyMonitor = EscapeKeyMonitor { [weak window] keyWindow in
             guard let window, keyWindow === window else { return false }
-            window.performClose(nil)
+            window.close()
             return true
         }
     }
@@ -65,6 +83,8 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        composerFocusRequests.send()
+        DispatchQueue.main.async { [weak self] in
+            self?.composerFocusRequests.send()
+        }
     }
 }

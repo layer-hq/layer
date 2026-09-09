@@ -83,9 +83,11 @@ final class ChatConversation: ObservableObject {
     private var responseTask: Task<Void, Never>?
 
     init(
+        initialMessages: [ChatMessage] = [],
         credentials: any ChatCredentialProviding = StoredChatCredentialAdapter(),
         responses: any ChatResponseStreaming = OpenAIClient()
     ) {
+        messages = initialMessages
         self.credentials = credentials
         self.responses = responses
     }

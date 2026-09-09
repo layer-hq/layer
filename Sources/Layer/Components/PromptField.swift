@@ -64,6 +64,12 @@ struct PromptField<Accessory: View>: View {
                     )
             }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                updateFocus(true)
+            }
+        )
     }
 
     private func handleReturn(_ keyPress: KeyPress) -> KeyPress.Result {

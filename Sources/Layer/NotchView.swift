@@ -4,6 +4,8 @@ import SwiftUI
 
 @MainActor
 enum NotchMaterialFactory {
+    static let cornerRadius: CGFloat = 24
+
     private static let regularGlassStyle = 0
 
     private static let adaptiveAppearanceOff = 1
@@ -41,7 +43,7 @@ enum NotchMaterialFactory {
     }
 }
 
-private struct NotchMaterialView<Content: View>: NSViewRepresentable {
+struct NotchMaterialView<Content: View>: NSViewRepresentable {
     let cornerRadius: CGFloat
     let content: Content
 
@@ -104,7 +106,7 @@ struct NotchView: View {
     var body: some View {
         GeometryReader { geometry in
             let isExpanded = session.isExpanded
-            let cornerRadius: CGFloat = 24
+            let cornerRadius = NotchMaterialFactory.cornerRadius
             let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
             NotchMaterialView(cornerRadius: cornerRadius) {
