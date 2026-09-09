@@ -132,7 +132,8 @@ final class NotchPanel: OverlayPanel {
             guard let self else { return }
             await prepareForFocusSteal()
             presentExpanded()
-            guard StoredChatCredentialAdapter().loadCredential()?.isEmpty == false else {
+            guard let provider = StoredModelProviderAdapter().loadActiveProvider(),
+                  provider.kind.supportsRealtimeVoice else {
                 voiceMode.start()
                 return
             }

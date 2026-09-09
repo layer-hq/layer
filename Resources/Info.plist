@@ -26,6 +26,13 @@
         <string>14.0</string>
         <key>NSHighResolutionCapable</key>
         <true />
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsLocalNetworking</key>
+            <true />
+        </dict>
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>Layer connects to model providers that you configure on your local network.</string>
         <key>NSMicrophoneUsageDescription</key>
         <string>Layer uses your microphone for voice conversations with OpenAI.</string>
         <key>NSScreenCaptureUsageDescription</key>

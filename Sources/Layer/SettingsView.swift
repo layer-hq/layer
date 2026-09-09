@@ -18,10 +18,15 @@ struct SettingsView: View {
     }
 
     @State private var selection: Section? = .apiKeys
-    @State private var apiKey = ""
+    @State private var providerSelection: ModelProviderKind? = .openAI
+    @State private var configurations: [ModelProviderConfiguration] = []
+    @State private var activeConfigurationID: UUID?
+    @State private var draftConfiguration = ModelProviderConfiguration(kind: .openAI)
     @State private var isKeyVisible = false
     @State private var statusMessage: String?
-    @AppStorage("openAIAPIKey") private var savedAPIKey = ""
+    @State private var statusIsError = false
+    @State private var availableModels: [String] = []
+    @State private var isLoadingModels = false
     @AppStorage(InvocationShortcutPreferences.isEnabledKey)
     private var invocationShortcutEnabled = true
     @AppStorage(InvocationShortcutPreferences.modifierKey)
@@ -62,71 +67,144 @@ struct SettingsView: View {
                 shortcutsView
             }
         }
-        .frame(width: 650, height: 520)
-        .onAppear(perform: loadKey)
+        .frame(width: 780, height: 600)
+        .onAppear(perform: loadProviders)
     }
 
     private var apiKeysView: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("API Keys")
-                .font(.title2.weight(.semibold))
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("OpenAI API key")
-                    .font(.headline)
-                Text("Saved locally in this app's preferences for your macOS user account. Turns may use OpenAI web search, billed on this key.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Link(
-                    "Get an API key",
-                    destination: URL(string: "https://platform.openai.com/api-keys")!
-                )
-                .font(.subheadline)
+        HSplitView {
+            List(ModelProviderKind.allCases, selection: $providerSelection) { kind in
+                providerRow(kind)
+                    .tag(kind)
+            }
+            .frame(minWidth: 170, idealWidth: 190)
+            .onChange(of: providerSelection) {
+                loadDraft()
             }
 
-            HStack(spacing: 8) {
-                Group {
-                    if isKeyVisible {
-                        TextField("sk-…", text: $apiKey)
-                    } else {
-                        SecureField("sk-…", text: $apiKey)
+            providerEditor
+                .frame(minWidth: 390)
+        }
+    }
+
+    private func providerRow(_ kind: ModelProviderKind) -> some View {
+        HStack(spacing: 8) {
+            SwiftUI.Button {
+                activate(kind)
+            } label: {
+                Image(
+                    systemName: configuration(for: kind)?.id
+                        == activeConfigurationID
+                        ? "largecircle.fill.circle"
+                        : "circle"
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Use \(kind.name)")
+            .accessibilityLabel("Use \(kind.name)")
+
+            Text(kind.name)
+        }
+    }
+
+    private var providerEditor: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(draftConfiguration.kind.name)
+                .font(.title2.weight(.semibold))
+
+            Text("Configure this provider, then choose the active provider with the radio button in the sidebar. Keys stay in this app's local preferences.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Text("Use HTTPS for remote hosts. HTTP is intended for local providers such as localhost.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+                GridRow {
+                    Text("Base URL")
+                    TextField("http://localhost:4000", text: $draftConfiguration.baseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(draftConfiguration.kind == .openAI)
+                        .help(
+                            draftConfiguration.kind == .openAI
+                                ? "OpenAI uses its official API endpoint."
+                                : "The base URL of your LiteLLM proxy."
+                        )
+                }
+                GridRow {
+                    Text("API key")
+                    HStack(spacing: 8) {
+                        Group {
+                            if isKeyVisible {
+                                TextField("sk-…", text: $draftConfiguration.apiKey)
+                            } else {
+                                SecureField("sk-…", text: $draftConfiguration.apiKey)
+                            }
+                        }
+                        .textFieldStyle(.roundedBorder)
+
+                        SwiftUI.Button {
+                            isKeyVisible.toggle()
+                        } label: {
+                            Image(systemName: isKeyVisible ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(isKeyVisible ? "Hide API key" : "Show API key")
                     }
                 }
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(saveKey)
+                GridRow {
+                    Text("Model")
+                    HStack(spacing: 8) {
+                        TextField("Model name or proxy alias", text: $draftConfiguration.model)
+                            .textFieldStyle(.roundedBorder)
 
-                SwiftUI.Button {
-                    isKeyVisible.toggle()
-                } label: {
-                    Image(systemName: isKeyVisible ? "eye.slash" : "eye")
-                        .frame(width: 18, height: 18)
+                        if !availableModels.isEmpty {
+                            Menu("Choose") {
+                                ForEach(availableModels, id: \.self) { model in
+                                    SwiftUI.Button(model) {
+                                        draftConfiguration.model = model
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                .buttonStyle(.borderless)
-                .help(isKeyVisible ? "Hide API key" : "Show API key")
-                .accessibilityLabel(isKeyVisible ? "Hide API key" : "Show API key")
             }
 
             HStack {
-                if let statusMessage {
-                    Label(
-                        statusMessage,
-                        systemImage: "checkmark.circle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Color.green)
+                SwiftUI.Button("Load Models", action: loadModels)
+                    .disabled(isLoadingModels)
+
+                if isLoadingModels {
+                    ProgressView()
+                        .controlSize(.small)
                 }
 
                 Spacer()
 
-                if !savedAPIKey.isEmpty {
-                    SwiftUI.Button("Remove Key", role: .destructive, action: removeKey)
-                }
-
-                SwiftUI.Button("Save", action: saveKey)
+                SwiftUI.Button("Save", action: saveProvider)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+
+            if draftConfiguration.kind == .liteLLM {
+                Text("Chat and Insert use LiteLLM's OpenAI-compatible API. Voice currently requires an OpenAI connection.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let statusMessage {
+                Label(
+                    statusMessage,
+                    systemImage: statusIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(statusIsError ? Color.orange : Color.green)
+            }
+
+            Spacer()
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -221,23 +299,103 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func loadKey() {
-        apiKey = savedAPIKey
+    private func loadProviders() {
+        let storedConfigurations = ModelProviderPreferences.configurations()
+        let selectedKind = storedConfigurations.first(where: {
+            $0.id == ModelProviderPreferences.selectedConfigurationID()
+        })?.kind
+        configurations = ModelProviderKind.allCases.map { kind in
+            storedConfigurations.first(where: { $0.kind == kind })
+                ?? ModelProviderConfiguration(kind: kind)
+        }
+        ModelProviderPreferences.saveConfigurations(configurations)
+
+        let activeConfiguration = configuration(for: selectedKind ?? .openAI)
+        activeConfigurationID = activeConfiguration?.id
+        ModelProviderPreferences.select(activeConfigurationID)
+        providerSelection = selectedKind ?? .openAI
+        loadDraft()
     }
 
-    private func saveKey() {
-        let cleanedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanedKey.isEmpty else { return }
-
-        savedAPIKey = cleanedKey
-        apiKey = cleanedKey
-        statusMessage = "API key saved"
+    private func loadDraft() {
+        guard let kind = providerSelection,
+              let configuration = configuration(for: kind) else {
+            return
+        }
+        draftConfiguration = configuration
+        isKeyVisible = false
+        availableModels = []
+        statusMessage = nil
     }
 
-    private func removeKey() {
-        savedAPIKey = ""
-        apiKey = ""
-        statusMessage = "API key removed"
+    private func activate(_ kind: ModelProviderKind) {
+        guard let configuration = configuration(for: kind) else { return }
+        providerSelection = kind
+        activeConfigurationID = configuration.id
+        ModelProviderPreferences.select(configuration.id)
+        statusMessage = configuration.isReady
+            ? "\(configuration.name) is active"
+            : "Save all required fields before using this connection"
+        statusIsError = !configuration.isReady
+    }
+
+    private func saveProvider() {
+        var cleaned = draftConfiguration.cleaned()
+        cleaned.name = cleaned.kind.name
+        if cleaned.kind == .openAI {
+            cleaned.baseURL = ModelProviderKind.openAI.defaultBaseURL
+        }
+        guard cleaned.apiRootURL != nil else {
+            showError("Enter a valid base URL using http or https.")
+            return
+        }
+        guard !cleaned.apiKey.isEmpty else {
+            showError("Enter an API key.")
+            return
+        }
+        guard !cleaned.model.isEmpty else {
+            showError("Enter or choose a model.")
+            return
+        }
+        guard let index = configurations.firstIndex(where: { $0.id == cleaned.id }) else {
+            return
+        }
+        configurations[index] = cleaned
+        draftConfiguration = cleaned
+        ModelProviderPreferences.saveConfigurations(configurations)
+        activeConfigurationID = cleaned.id
+        ModelProviderPreferences.select(cleaned.id)
+        statusMessage = "Provider saved and activated"
+        statusIsError = false
+    }
+
+    private func configuration(
+        for kind: ModelProviderKind
+    ) -> ModelProviderConfiguration? {
+        configurations.first(where: { $0.kind == kind })
+    }
+
+    private func loadModels() {
+        isLoadingModels = true
+        statusMessage = nil
+        let provider = draftConfiguration.cleaned()
+        Task {
+            do {
+                availableModels = try await ModelCatalogClient().models(for: provider)
+                statusMessage = availableModels.isEmpty
+                    ? "The provider returned no models"
+                    : "Loaded \(availableModels.count) models"
+                statusIsError = availableModels.isEmpty
+            } catch {
+                showError(error.localizedDescription)
+            }
+            isLoadingModels = false
+        }
+    }
+
+    private func showError(_ message: String) {
+        statusMessage = message
+        statusIsError = true
     }
 }
 

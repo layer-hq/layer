@@ -1,68 +1,33 @@
 import Foundation
 
-enum OpenAIClientError: LocalizedError, Sendable {
-    case invalidResponse
-    case api(message: String)
-    case streamEndedUnexpectedly
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidResponse:
-            return "OpenAI returned an invalid response."
-        case .api(let message):
-            return message
-        case .streamEndedUnexpectedly:
-            return "The response stream ended before completion."
-        }
-    }
-}
-
 struct OpenAIClient: ChatResponseStreaming {
-    private nonisolated static let endpoint = URL(
-        string: "https://api.openai.com/v1/responses"
-    )!
-
     func streamResponse(
         for chatRequest: ChatResponseRequest
     ) -> AsyncThrowingStream<ChatResponseEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task.detached {
                 do {
-                    var body: [String: Any] = [
-                        "model": "gpt-5.6-terra",
-                        "input": ModelContextPayload.chatInput(
-                            prompt: chatRequest.prompt,
-                            selectedContent: chatRequest.selectedContent,
-                            screenAttachment: chatRequest.screenAttachment
-                        ),
-                        "stream": true,
-                        "store": true,
-                        "tools": [["type": "web_search"]]
-                    ]
-                    if let instructions = chatRequest.instructions {
-                        body["instructions"] = instructions
+                    guard let endpoint = chatRequest.provider.endpointURL("responses") else {
+                        throw ModelProviderClientError.invalidConfiguration(
+                            "The selected OpenAI connection has an invalid URL."
+                        )
                     }
-                    if chatRequest.structuredOutput {
-                        body["text"] = Self.insertResponseFormat
-                    }
-                    if let continuationID = chatRequest.continuationID {
-                        body["previous_response_id"] = continuationID
-                    }
-
-                    var request = URLRequest(url: Self.endpoint)
+                    var request = URLRequest(url: endpoint)
                     request.httpMethod = "POST"
                     request.timeoutInterval = 300
                     request.setValue(
-                        "Bearer \(chatRequest.credential)",
+                        "Bearer \(chatRequest.provider.apiKey)",
                         forHTTPHeaderField: "Authorization"
                     )
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    request.httpBody = try JSONSerialization.data(
+                        withJSONObject: Self.requestBody(for: chatRequest)
+                    )
 
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse else {
-                        throw OpenAIClientError.invalidResponse
+                        throw ModelProviderClientError.invalidResponse("OpenAI")
                     }
 
                     guard (200..<300).contains(httpResponse.statusCode) else {
@@ -103,7 +68,7 @@ struct OpenAIClient: ChatResponseStreaming {
                         case "response.completed":
                             guard let response = json["response"] as? [String: Any],
                                   let responseID = response["id"] as? String else {
-                                throw OpenAIClientError.invalidResponse
+                                throw ModelProviderClientError.invalidResponse("OpenAI")
                             }
                             completed = true
                             continuation.yield(.completed(responseID))
@@ -117,7 +82,7 @@ struct OpenAIClient: ChatResponseStreaming {
                     }
 
                     guard completed else {
-                        throw OpenAIClientError.streamEndedUnexpectedly
+                        throw ModelProviderClientError.streamEndedUnexpectedly("OpenAI")
                     }
                     continuation.finish()
                 } catch {
@@ -131,33 +96,30 @@ struct OpenAIClient: ChatResponseStreaming {
         }
     }
 
-    private nonisolated static var insertResponseFormat: [String: Any] {
-        [
-            "format": [
-                "type": "json_schema",
-                "name": "insert_result",
-                "strict": true,
-                "schema": [
-                    "type": "object",
-                    "properties": [
-                        "kind": [
-                            "type": "string",
-                            "enum": InsertResult.Kind.allCases.map(\.rawValue)
-                        ],
-                        "text": ["type": "string"],
-                        "rows": [
-                            "type": "array",
-                            "items": [
-                                "type": "array",
-                                "items": ["type": "string"]
-                            ]
-                        ]
-                    ],
-                    "required": ["kind", "text", "rows"],
-                    "additionalProperties": false
-                ]
-            ]
+    nonisolated static func requestBody(
+        for chatRequest: ChatResponseRequest
+    ) -> [String: Any] {
+        var body: [String: Any] = [
+            "model": chatRequest.provider.model,
+            "input": ModelContextPayload.chatInput(
+                prompt: chatRequest.prompt,
+                selectedContent: chatRequest.selectedContent,
+                screenAttachment: chatRequest.screenAttachment
+            ),
+            "stream": true,
+            "store": true,
+            "tools": [["type": "web_search"]]
         ]
+        if let instructions = chatRequest.instructions {
+            body["instructions"] = instructions
+        }
+        if chatRequest.structuredOutput {
+            body["text"] = ["format": InsertResponseFormat.jsonSchema]
+        }
+        if let continuationID = chatRequest.continuationID {
+            body["previous_response_id"] = continuationID
+        }
+        return body
     }
 
     private nonisolated static func apiError(
@@ -165,21 +127,58 @@ struct OpenAIClient: ChatResponseStreaming {
         statusCode: Int
     ) -> Error {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return OpenAIClientError.api(
-            message: errorMessage(in: json)
+        return ModelProviderClientError.api(
+            message: ProviderResponseParsing.errorMessage(in: json)
                 ?? "OpenAI request failed (HTTP \(statusCode))."
         )
     }
 
     private nonisolated static func eventError(from json: [String: Any]) -> Error {
-        OpenAIClientError.api(
-            message: errorMessage(in: json)
-                ?? errorMessage(in: json["response"] as? [String: Any])
+        ModelProviderClientError.api(
+            message: ProviderResponseParsing.errorMessage(in: json)
+                ?? ProviderResponseParsing.errorMessage(
+                    in: json["response"] as? [String: Any]
+                )
                 ?? "OpenAI could not complete the response."
         )
     }
+}
 
-    private nonisolated static func errorMessage(in json: [String: Any]?) -> String? {
-        (json?["error"] as? [String: Any])?["message"] as? String
+enum InsertResponseFormat {
+    nonisolated static var jsonSchema: [String: Any] {
+        [
+            "type": "json_schema",
+            "name": "insert_result",
+            "strict": true,
+            "schema": [
+                "type": "object",
+                "properties": [
+                    "kind": [
+                        "type": "string",
+                        "enum": InsertResult.Kind.allCases.map(\.rawValue)
+                    ],
+                    "text": ["type": "string"],
+                    "rows": [
+                        "type": "array",
+                        "items": [
+                            "type": "array",
+                            "items": ["type": "string"]
+                        ]
+                    ]
+                ],
+                "required": ["kind", "text", "rows"],
+                "additionalProperties": false
+            ]
+        ]
     }
+
+    nonisolated static var chatCompletions: [String: Any] {
+        var definition = jsonSchema
+        definition.removeValue(forKey: "type")
+        return [
+            "type": "json_schema",
+            "json_schema": definition
+        ]
+    }
+
 }

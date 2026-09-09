@@ -54,13 +54,13 @@ struct InsertResult: Decodable, Equatable, Sendable {
     init(responseText: String) throws {
         guard let data = responseText.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(Self.self, from: data) else {
-            throw OpenAIClientError.invalidResponse
+            throw ModelProviderClientError.invalidResponse("The model provider")
         }
         if decoded.kind == .table {
             guard let columnCount = decoded.rows.first?.count,
                   columnCount > 0,
                   decoded.rows.allSatisfy({ $0.count == columnCount }) else {
-                throw OpenAIClientError.invalidResponse
+                throw ModelProviderClientError.invalidResponse("The model provider")
             }
         }
         self = decoded
