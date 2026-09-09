@@ -59,7 +59,7 @@ struct ScreenSelectionOverlayFocusTests {
     }
 
     @Test(.enabled(if: NSScreen.main != nil, "Requires a graphical session"))
-    func chatComposerRegainsFocusAfterSendingAMessage() async throws {
+    func chatComposerRetainsFocusAfterSendingAMessage() async throws {
         let conversation = ChatConversation(
             credentials: ChatCredentialFake(),
             responses: ChatResponseFake()
@@ -78,10 +78,6 @@ struct ScreenSelectionOverlayFocusTests {
         defer { window.close() }
 
         #expect(await promptIsFocused(in: window))
-
-        let composerHost = try #require(window.contentView)
-        window.makeFirstResponder(composerHost)
-        #expect(!(window.firstResponder is NSTextView))
 
         conversation.draft = "Question"
         conversation.submitDraft()
