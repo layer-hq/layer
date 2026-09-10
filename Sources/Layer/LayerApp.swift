@@ -9,6 +9,8 @@ struct LayerApp: App {
         Settings {
             SettingsView()
         }
+        .defaultSize(width: 780, height: 600)
+        .windowResizability(.contentMinSize)
     }
 }
 

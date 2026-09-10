@@ -58,7 +58,7 @@ struct SettingsView: View {
                 Label(section.rawValue, systemImage: section.icon)
                     .tag(section)
             }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 170)
+            .navigationSplitViewColumnWidth(min: 150, ideal: 150, max: 150)
         } detail: {
             switch selection ?? .apiKeys {
             case .apiKeys:
@@ -67,7 +67,7 @@ struct SettingsView: View {
                 shortcutsView
             }
         }
-        .frame(width: 780, height: 600)
+        .frame(minWidth: 650, minHeight: 480)
         .onAppear(perform: loadProviders)
     }
 
@@ -77,13 +77,13 @@ struct SettingsView: View {
                 providerRow(kind)
                     .tag(kind)
             }
-            .frame(minWidth: 170, idealWidth: 190)
+            .frame(width: 150)
             .onChange(of: providerSelection) {
                 loadDraft()
             }
 
             providerEditor
-                .frame(minWidth: 390)
+                .frame(minWidth: 350)
         }
     }
 
