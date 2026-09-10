@@ -43,6 +43,15 @@ enum NotchMaterialFactory {
     }
 }
 
+func appendingDictation(_ transcript: String, to prompt: String) -> String {
+    let transcript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !transcript.isEmpty else { return prompt }
+    guard !prompt.isEmpty else { return transcript }
+    return prompt.last?.isWhitespace == true
+        ? prompt + transcript
+        : prompt + " " + transcript
+}
+
 struct NotchMaterialView<Content: View>: NSViewRepresentable {
     let cornerRadius: CGFloat
     let content: Content
@@ -89,12 +98,14 @@ struct NotchView: View {
     @Environment(\.openSettings) private var openSettings
     @ObservedObject var session: NotchSession
     @ObservedObject var voiceMode: VoiceModeController
+    @ObservedObject var dictation: DictationController
     let expandedWidth: CGFloat
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
     let onSelect: () -> Void
     let onSubmitPrompt: (String, Bool) -> Void
     let onToggleVoice: () -> Void
+    let onToggleDictation: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
 
     @State private var prompt = ""
@@ -142,10 +153,14 @@ struct NotchView: View {
                     }
                     .animation(.easeOut(duration: 0.1), value: isExpanded)
                     .animation(.easeOut(duration: 0.1), value: voiceMode.state)
+                    .animation(.easeOut(duration: 0.1), value: dictation.state)
                     .onChange(of: session.isGenerating) {
                         if !session.isGenerating, !session.isExpanded {
                             prompt = ""
                         }
+                    }
+                    .onReceive(dictation.transcripts) { transcript in
+                        prompt = appendingDictation(transcript, to: prompt)
                     }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -163,7 +178,7 @@ struct NotchView: View {
 
                 Spacer()
 
-                if let label = voiceMode.state.label {
+                if let label = voiceMode.state.label ?? dictation.state.label {
                     Text(label)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -184,6 +199,10 @@ struct NotchView: View {
                 noticeBanner(notice) { voiceMode.dismissNotice() }
             }
 
+            if let notice = dictation.notice {
+                noticeBanner(notice) { dictation.dismissNotice() }
+            }
+
             if !hasActiveProvider {
                 WarningBanner(message: "No model provider is selected") {
                     SwiftUI.Button(action: showSettings) {
@@ -195,14 +214,17 @@ struct NotchView: View {
 
             PromptField(
                 text: $prompt,
-                shouldFocus: isExpanded && !voiceMode.isActive && !session.isGenerating,
+                shouldFocus: isExpanded
+                    && !voiceMode.isActive
+                    && !dictation.isActive
+                    && !session.isGenerating,
                 focusRequests: promptFocusRequests,
                 onCommandReturn: { submit(insertMode: true) },
                 showsChrome: false,
                 lineLimit: 1...5,
                 textInsets: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
                 minTextHeight: 62,
-                isDisabled: voiceMode.isActive || session.isGenerating,
+                isDisabled: voiceMode.isActive || dictation.isActive || session.isGenerating,
                 onFocusChange: { promptIsFocused = $0 },
                 onSubmit: { _ in submit(insertMode: false) }
             ) {
@@ -227,6 +249,23 @@ struct NotchView: View {
                     .disabled(session.isGenerating)
                     .help("May briefly use the clipboard when required.")
                     .accessibilityHint("May briefly use the clipboard when required.")
+
+                    Button(
+                        icon: Image(
+                            systemName: dictation.state == .recording
+                                ? "mic.fill"
+                                : "mic"
+                        ),
+                        label: dictation.state == .recording ? "Stop" : "Dictate",
+                        showsProgress: dictation.state == .transcribing,
+                        isSelected: dictation.state == .recording,
+                        action: onToggleDictation
+                    )
+                    .disabled(
+                        voiceMode.isActive
+                            || session.isGenerating
+                            || dictation.state == .transcribing
+                    )
 
                     Spacer(minLength: 8)
 
@@ -272,7 +311,7 @@ struct NotchView: View {
                         label: "Select area…",
                         action: onSelect
                     )
-                    .disabled(session.isGenerating)
+                    .disabled(session.isGenerating || dictation.isActive)
                     .accessibilityHint("Enter select mode")
 
                 Spacer()
@@ -283,6 +322,7 @@ struct NotchView: View {
                     showsProgress: voiceMode.state == .connecting,
                     action: onToggleVoice
                 )
+                .disabled(dictation.isActive)
             }
         }
         .padding(18)
@@ -297,6 +337,7 @@ struct NotchView: View {
     private var canSubmit: Bool {
         !session.isGenerating
             && !voiceMode.isActive
+            && !dictation.isActive
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 

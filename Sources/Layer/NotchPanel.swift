@@ -30,6 +30,7 @@ final class NotchPanel: OverlayPanel {
     private let promptFocusRequests = PassthroughSubject<Void, Never>()
     private let session = NotchSession()
     private let voiceMode = VoiceModeController()
+    private let dictation = DictationController()
     private let onSelect: () -> Void
     private let onSubmitPrompt: (String, Bool) -> Void
     private let onCancelGeneration: () -> Void
@@ -62,6 +63,10 @@ final class NotchPanel: OverlayPanel {
                 cancelGeneration()
                 return true
             }
+            if dictation.isActive {
+                dictation.cancel()
+                return true
+            }
             guard window === self else { return false }
             if voiceMode.isActive {
                 voiceMode.stop()
@@ -85,12 +90,13 @@ final class NotchPanel: OverlayPanel {
 
         let layout = makeLayout(for: screen)
         currentLayout = layout
-        let voiceActive = voiceMode.isActive
-        session.isExpanded = voiceActive
+        let actionActive = voiceMode.isActive || dictation.isActive
+        session.isExpanded = actionActive
         contentViewController = NSHostingController(
             rootView: NotchView(
                 session: session,
                 voiceMode: voiceMode,
+                dictation: dictation,
                 expandedWidth: layout.expandedSize.width,
                 promptFocusRequests: promptFocusRequests.eraseToAnyPublisher(),
                 onHoverChange: { [weak self] hovering in
@@ -105,6 +111,9 @@ final class NotchPanel: OverlayPanel {
                 onToggleVoice: { [weak self] in
                     self?.toggleVoice()
                 },
+                onToggleDictation: { [weak self] in
+                    self?.toggleDictation()
+                },
                 onContentHeightChange: { [weak self] height in
                     self?.handleContentHeightChange(height)
                 }
@@ -112,7 +121,7 @@ final class NotchPanel: OverlayPanel {
         )
         setFrame(
             frame(
-                for: voiceActive ? layout.expandedSize : layout.collapsedSize,
+                for: actionActive ? layout.expandedSize : layout.collapsedSize,
                 on: screen
             ),
             display: true
@@ -123,7 +132,27 @@ final class NotchPanel: OverlayPanel {
         voiceMode.stop()
     }
 
+    func beginDictation() {
+        guard !voiceMode.isActive, !session.isGenerating else { return }
+        invoke()
+        dictation.start()
+    }
+
+    func endDictation() {
+        dictation.stopAndTranscribe()
+    }
+
+    func cancelDictation() {
+        dictation.cancel()
+    }
+
+    private func toggleDictation() {
+        guard !voiceMode.isActive else { return }
+        dictation.toggle()
+    }
+
     func toggleVoice() {
+        guard !dictation.isActive else { return }
         if voiceMode.isActive {
             voiceMode.stop()
             return
@@ -254,7 +283,10 @@ final class NotchPanel: OverlayPanel {
         pendingCollapse?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self, self.isExpanded, !self.session.isGenerating else { return }
+            guard let self,
+                  self.isExpanded,
+                  !self.session.isGenerating,
+                  !self.dictation.isActive else { return }
 
             let hoverBounds = self.frame.insetBy(dx: -6, dy: -6)
             if hoverBounds.contains(NSEvent.mouseLocation) {
@@ -280,7 +312,7 @@ final class NotchPanel: OverlayPanel {
     }
 
     private func setExpanded(_ expanded: Bool) {
-        if !expanded && voiceMode.isActive {
+        if !expanded && (voiceMode.isActive || dictation.isActive) {
             return
         }
         guard expanded != isExpanded, let layout = currentLayout else { return }

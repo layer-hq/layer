@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let screenContextAcquisition = ScreenContextAcquisition()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
-    private var voiceShortcut: GlobalSelectionShortcut?
+    private var dictationShortcut: GlobalSelectionShortcut?
     private var localShortcutMonitor: Any?
     private var globalShortcutMonitor: Any?
     private var insertionTask: Task<Void, Never>?
@@ -23,16 +23,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.setActivationPolicy(.regular)
         InvocationShortcutPreferences.registerDefaults()
         SelectionShortcutPreferences.registerDefaults()
-        VoiceShortcutPreferences.registerDefaults()
+        DictationShortcutPreferences.registerDefaults()
         let accessibilityOptions = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(accessibilityOptions)
         startInvocationShortcutMonitoring()
         selectionShortcut = GlobalSelectionShortcut(id: 1) { [weak self] in
             self?.beginSelection()
         }
-        voiceShortcut = GlobalSelectionShortcut(id: 2) { [weak self] in
-            self?.toggleVoice()
-        }
+        dictationShortcut = GlobalSelectionShortcut(
+            id: 2,
+            action: { [weak self] in self?.beginDictation() },
+            releaseAction: { [weak self] in self?.endDictation() }
+        )
         updateRegisteredShortcuts()
         NotificationCenter.default.addObserver(
             self,
@@ -56,10 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         cancelInsertion()
+        notchPanel?.cancelDictation()
         notchPanel?.stopVoice()
         NotificationCenter.default.removeObserver(self)
         selectionShortcut?.invalidate()
-        voiceShortcut?.invalidate()
+        dictationShortcut?.invalidate()
         if let localShortcutMonitor {
             NSEvent.removeMonitor(localShortcutMonitor)
         }
@@ -118,16 +121,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             modifiers: SelectionShortcutPreferences.modifiers,
             enabled: SelectionShortcutPreferences.isEnabled
         )
-        voiceShortcut?.register(
-            keyCode: VoiceShortcutPreferences.keyCode,
-            modifiers: VoiceShortcutPreferences.modifiers,
-            enabled: VoiceShortcutPreferences.isEnabled
+        dictationShortcut?.register(
+            keyCode: DictationShortcutPreferences.keyCode,
+            modifiers: DictationShortcutPreferences.modifiers,
+            enabled: DictationShortcutPreferences.isEnabled
         )
     }
 
-    private func toggleVoice() {
+    private func beginDictation() {
         let panel = notchPanel ?? makeNotchPanel()
-        panel.toggleVoice()
+        panel.beginDictation()
+    }
+
+    private func endDictation() {
+        notchPanel?.endDictation()
     }
 
     private func makeNotchPanel() -> NotchPanel {

@@ -85,7 +85,8 @@ enum SelectionShortcutPreferences {
     }
 }
 
-enum VoiceShortcutPreferences {
+enum DictationShortcutPreferences {
+    // Keep these persisted keys so existing ⌘⇧M customizations carry over.
     static let isEnabledKey = "voiceShortcutEnabled"
     static let modifierFlagsKey = "voiceShortcutModifierFlags"
     static let characterKey = "voiceShortcutCharacter"
@@ -127,15 +128,27 @@ final class GlobalSelectionShortcut {
     private var hotKey: EventHotKeyRef?
     private let hotKeyID: UInt32
     private let action: @MainActor () -> Void
+    private let releaseAction: (@MainActor () -> Void)?
 
-    init(id: UInt32, action: @escaping @MainActor () -> Void) {
+    init(
+        id: UInt32,
+        action: @escaping @MainActor () -> Void,
+        releaseAction: (@MainActor () -> Void)? = nil
+    ) {
         self.hotKeyID = id
         self.action = action
+        self.releaseAction = releaseAction
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        var eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
         InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData in
@@ -162,12 +175,16 @@ final class GlobalSelectionShortcut {
                     guard pressed.id == shortcut.hotKeyID else {
                         return OSStatus(eventNotHandledErr)
                     }
-                    shortcut.action()
+                    if GetEventKind(event) == UInt32(kEventHotKeyReleased) {
+                        shortcut.releaseAction?()
+                    } else {
+                        shortcut.action()
+                    }
                     return noErr
                 }
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
