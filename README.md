@@ -21,9 +21,11 @@ selected region as visual context.
 
 ## Privacy and permissions
 
-- **Provider connections:** Layer supports OpenAI and self-hosted
-  [LiteLLM](https://docs.litellm.ai/) proxies. Configure each provider's base
-  URL, key, and model, then select the active provider in the Settings sidebar.
+- **Provider connections:** Layer supports OpenAI, the hosted
+  [OpenRouter](https://openrouter.ai/) service, and self-hosted
+  [LiteLLM](https://docs.litellm.ai/) proxies. Configure each provider's key
+  and model (plus the base URL for LiteLLM), then select the active provider in
+  the Settings sidebar.
   These details are saved locally in the app's macOS user preferences.
   Remote hosts should use HTTPS; local-network HTTP is supported for development.
 - **OpenAI:** Every Responses API request sets `store: true`, so OpenAI retains
@@ -39,6 +41,8 @@ selected region as visual context.
 - **LiteLLM:** Chat and Insert are sent to the selected proxy through its
   OpenAI-compatible `/v1/chat/completions` endpoint. Storage, logging, web
   access, and downstream-provider retention depend on that proxy's configuration.
+- **OpenRouter:** Chat and Insert use OpenRouter's hosted, OpenAI-compatible
+  `/api/v1/chat/completions` endpoint. The endpoint is fixed in Settings.
 - **Telemetry:** Layer includes no analytics or telemetry.
 - **Microphone:** Required for voice mode, which currently requires an OpenAI
   connection. Audio is sent to OpenAI's Realtime API only while the Notch
@@ -70,7 +74,8 @@ selected region as visual context.
 
 - An Apple silicon Mac (M1 or newer) running macOS 14 or newer
 - Swift 6 and the macOS SDK
-- An [OpenAI API key](https://platform.openai.com/api-keys), or a LiteLLM proxy
+- An [OpenAI API key](https://platform.openai.com/api-keys), an
+  [OpenRouter API key](https://openrouter.ai/settings/keys), or a LiteLLM proxy
   base URL, virtual key, and model name
 
 Xcode project files are not required. If `swift --version` is unavailable,

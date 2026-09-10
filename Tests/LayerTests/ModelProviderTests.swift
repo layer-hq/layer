@@ -5,6 +5,19 @@ import Testing
 @Suite(.serialized)
 struct ModelProviderTests {
     @Test
+    func openRouterUsesItsHostedAPIEndpoint() {
+        let provider = ModelProviderConfiguration(kind: .openRouter)
+
+        #expect(provider.baseURL == "https://openrouter.ai/api/v1")
+        #expect(
+            provider.endpointURL("chat/completions")?.absoluteString
+                == "https://openrouter.ai/api/v1/chat/completions"
+        )
+        #expect(!ModelProviderKind.openRouter.supportsCustomBaseURL)
+        #expect(ModelProviderKind.liteLLM.supportsCustomBaseURL)
+    }
+
+    @Test
     func normalizesProviderBaseURLsToV1Endpoints() throws {
         let bareHost = ModelProviderConfiguration(
             kind: .liteLLM,
@@ -169,12 +182,17 @@ struct ModelProviderTests {
     @MainActor
     func providerClientRoutesThroughTheSelectedAdapter() async throws {
         let openAI = RecordingResponseAdapter()
+        let openRouter = RecordingResponseAdapter()
         let liteLLM = RecordingResponseAdapter()
-        let client = ModelProviderClient(openAI: openAI, liteLLM: liteLLM)
+        let client = ModelProviderClient(
+            openAI: openAI,
+            openRouter: openRouter,
+            liteLLM: liteLLM
+        )
         let request = ChatResponseRequest(
             prompt: "Hello",
             provider: ModelProviderConfiguration(
-                kind: .liteLLM,
+                kind: .openRouter,
                 apiKey: "key",
                 model: "model"
             ),
@@ -185,7 +203,8 @@ struct ModelProviderTests {
         for try await _ in client.streamResponse(for: request) {}
 
         #expect(openAI.requests.isEmpty)
-        #expect(liteLLM.requests.map(\.provider.kind) == [.liteLLM])
+        #expect(openRouter.requests.map(\.provider.kind) == [.openRouter])
+        #expect(liteLLM.requests.isEmpty)
     }
 
     private func temporaryDefaults() throws -> UserDefaults {
