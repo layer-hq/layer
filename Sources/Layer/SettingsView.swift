@@ -274,7 +274,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Dictation")
                         .font(.headline)
-                    Text("Hold Fn to dictate into the prompt. This chord is the fallback when Fn is unavailable. If macOS uses Globe/Fn for emoji or system dictation, set it to Do Nothing in System Settings → Keyboard.")
+                    Text("Hold Fn to dictate into the prompt. This chord is the fallback when Fn is unavailable.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
