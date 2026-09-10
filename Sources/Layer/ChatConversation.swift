@@ -38,7 +38,8 @@ struct Notice: Equatable, Sendable {
 
 struct ChatResponseRequest: Sendable {
     let prompt: String
-    let credential: String
+    let provider: ModelProviderConfiguration
+    var history: [ModelConversationMessage] = []
     var instructions: String? = nil
     var structuredOutput = false
     let continuationID: String?
@@ -46,14 +47,25 @@ struct ChatResponseRequest: Sendable {
     var selectedContent: String? = nil
 }
 
+struct ModelConversationMessage: Equatable, Sendable {
+    let role: ChatRole
+    let content: String
+    let screenAttachment: ScreenAttachment?
+
+    init(
+        role: ChatRole,
+        content: String,
+        screenAttachment: ScreenAttachment? = nil
+    ) {
+        self.role = role
+        self.content = content
+        self.screenAttachment = screenAttachment
+    }
+}
+
 enum ChatResponseEvent: Sendable {
     case textDelta(String)
     case completed(String)
-}
-
-@MainActor
-protocol ChatCredentialProviding {
-    func loadCredential() -> String?
 }
 
 @MainActor
@@ -64,31 +76,26 @@ protocol ChatResponseStreaming {
 }
 
 @MainActor
-struct StoredChatCredentialAdapter: ChatCredentialProviding {
-    func loadCredential() -> String? {
-        UserDefaults.standard.string(forKey: "openAIAPIKey")
-    }
-}
-
-@MainActor
 final class ChatConversation: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published var draft = ""
     @Published private(set) var isResponding = false
     @Published private(set) var notice: Notice?
 
-    private let credentials: any ChatCredentialProviding
+    private let providers: any ModelProviderProviding
     private let responses: any ChatResponseStreaming
     private var continuationID: String?
+    private var provider: ModelProviderConfiguration?
+    private var history: [ModelConversationMessage] = []
     private var responseTask: Task<Void, Never>?
 
     init(
         initialMessages: [ChatMessage] = [],
-        credentials: any ChatCredentialProviding = StoredChatCredentialAdapter(),
-        responses: any ChatResponseStreaming = OpenAIClient()
+        providers: any ModelProviderProviding = StoredModelProviderAdapter(),
+        responses: any ChatResponseStreaming = ModelProviderClient()
     ) {
         messages = initialMessages
-        self.credentials = credentials
+        self.providers = providers
         self.responses = responses
     }
 
@@ -110,17 +117,27 @@ final class ChatConversation: ObservableObject {
         let prompt = rawPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isResponding else { return }
 
-        guard let credential = credentials.loadCredential(),
-              !credential.isEmpty else {
+        guard let provider = provider ?? providers.loadActiveProvider() else {
             notice = Notice(
-                message: "Add an OpenAI API key in Settings before sending a message.",
+                message: "Add and select a model provider in Settings before sending a message.",
                 recovery: .settings
             )
             return
         }
+        self.provider = provider
 
         notice = modelContext.screen.notice
         isResponding = true
+        let modelUserMessage = ModelConversationMessage(
+            role: .user,
+            content: ModelContextPayload.chatUserText(
+                prompt: prompt,
+                selectedContent: modelContext.selectedContent
+            ),
+            screenAttachment: modelContext.screen.attachment
+        )
+        let requestHistory = history
+        history.append(modelUserMessage)
         messages.append(
             ChatMessage(
                 role: .user,
@@ -131,7 +148,8 @@ final class ChatConversation: ObservableObject {
 
         let request = ChatResponseRequest(
             prompt: prompt,
-            credential: credential,
+            provider: provider,
+            history: requestHistory,
             continuationID: continuationID,
             screenAttachment: modelContext.screen.attachment,
             selectedContent: modelContext.selectedContent
@@ -144,15 +162,23 @@ final class ChatConversation: ObservableObject {
 
         responseTask = Task { [weak self] in
             guard let self else { return }
+            var responseText = ""
 
             do {
                 for try await event in responses.streamResponse(for: request) {
                     guard !Task.isCancelled else { return }
                     switch event {
                     case .textDelta(let delta):
+                        responseText += delta
                         append(delta, to: assistantMessageID)
                     case .completed(let continuationID):
                         self.continuationID = continuationID
+                        history.append(
+                            ModelConversationMessage(
+                                role: .assistant,
+                                content: responseText
+                            )
+                        )
                     }
                 }
             } catch is CancellationError {
@@ -177,6 +203,8 @@ final class ChatConversation: ObservableObject {
         responseTask?.cancel()
         responseTask = nil
         continuationID = nil
+        provider = nil
+        history = []
         messages = []
         draft = ""
         notice = nil

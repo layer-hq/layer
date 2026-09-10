@@ -7,7 +7,7 @@ import Testing
 struct VoiceModeControllerTests {
     @Test
     func startWithoutAPIKeySetsSettingsNoticeAndStaysIdle() {
-        let controller = VoiceModeController(credentials: ChatCredentialStub(value: nil))
+        let controller = VoiceModeController(providers: ModelProviderStub(value: nil))
 
         controller.start()
 
@@ -19,7 +19,7 @@ struct VoiceModeControllerTests {
 
     @Test
     func toggleFromIdleWithoutKeyRoutesToStart() {
-        let controller = VoiceModeController(credentials: ChatCredentialStub(value: nil))
+        let controller = VoiceModeController(providers: ModelProviderStub(value: nil))
 
         controller.toggle()
 
@@ -30,7 +30,7 @@ struct VoiceModeControllerTests {
 
     @Test
     func stopFromIdleIsNoOp() {
-        let controller = VoiceModeController(credentials: ChatCredentialStub(value: nil))
+        let controller = VoiceModeController(providers: ModelProviderStub(value: nil))
 
         controller.stop()
 
@@ -41,7 +41,7 @@ struct VoiceModeControllerTests {
 
     @Test
     func dismissNoticeClearsNotice() {
-        let controller = VoiceModeController(credentials: ChatCredentialStub(value: nil))
+        let controller = VoiceModeController(providers: ModelProviderStub(value: nil))
         controller.start()
         #expect(controller.notice != nil)
 
@@ -52,12 +52,30 @@ struct VoiceModeControllerTests {
 
     @Test
     func startIsIdempotentUntilKeyIsProvided() {
-        let controller = VoiceModeController(credentials: ChatCredentialStub(value: nil))
+        let controller = VoiceModeController(providers: ModelProviderStub(value: nil))
 
         controller.start()
         controller.start()
 
         #expect(controller.state == .idle)
+        #expect(controller.notice?.recovery == .settings)
+    }
+
+    @Test
+    func liteLLMConnectionExplainsThatVoiceRequiresOpenAI() {
+        let provider = ModelProviderConfiguration(
+            kind: .liteLLM,
+            apiKey: "key",
+            model: "model"
+        )
+        let controller = VoiceModeController(
+            providers: ModelProviderStub(value: provider)
+        )
+
+        controller.start()
+
+        #expect(controller.state == .idle)
+        #expect(controller.notice?.message.contains("requires an OpenAI") == true)
         #expect(controller.notice?.recovery == .settings)
     }
 
@@ -110,10 +128,10 @@ struct VoiceModeControllerTests {
 }
 
 @MainActor
-private struct ChatCredentialStub: ChatCredentialProviding {
-    let value: String?
+private struct ModelProviderStub: ModelProviderProviding {
+    let value: ModelProviderConfiguration?
 
-    func loadCredential() -> String? {
+    func loadActiveProvider() -> ModelProviderConfiguration? {
         value
     }
 }

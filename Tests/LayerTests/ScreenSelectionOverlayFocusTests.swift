@@ -61,7 +61,7 @@ struct ScreenSelectionOverlayFocusTests {
     @Test(.enabled(if: NSScreen.main != nil, "Requires a graphical session"))
     func chatComposerRetainsFocusAfterSendingAMessage() async throws {
         let conversation = ChatConversation(
-            credentials: ChatCredentialFake(),
+            providers: ModelProviderFake(),
             responses: ChatResponseFake()
         )
         let view = ChatView(
@@ -253,8 +253,14 @@ struct ScreenSelectionOverlayFocusTests {
 }
 
 @MainActor
-private struct ChatCredentialFake: ChatCredentialProviding {
-    func loadCredential() -> String? { "secret" }
+private struct ModelProviderFake: ModelProviderProviding {
+    func loadActiveProvider() -> ModelProviderConfiguration? {
+        ModelProviderConfiguration(
+            kind: .openAI,
+            apiKey: "secret",
+            model: "test-model"
+        )
+    }
 }
 
 @MainActor

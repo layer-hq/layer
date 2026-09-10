@@ -15,7 +15,7 @@ struct ChatConversationTests {
 
         let conversation = ChatConversation(
             initialMessages: messages,
-            credentials: ChatCredentialStub(value: nil),
+            providers: ModelProviderStub(value: nil),
             responses: responses
         )
 
@@ -33,7 +33,7 @@ struct ChatConversationTests {
             ]
         )
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
         let attachment = ScreenAttachment(imageData: Data([9, 8, 7]))
@@ -49,7 +49,8 @@ struct ChatConversationTests {
 
         #expect(conversation.messages.map(\.content) == ["First turn", "Hello there"])
         #expect(responses.requests.first?.prompt == "First turn")
-        #expect(responses.requests.first?.credential == "secret")
+        #expect(responses.requests.first?.provider.apiKey == "secret")
+        #expect(responses.requests.first?.provider.model == "test-model")
         #expect(responses.requests.first?.continuationID == nil)
         #expect(
             responses.requests.first?.screenAttachment?.imageData
@@ -75,7 +76,7 @@ struct ChatConversationTests {
             ]
         )
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
 
@@ -90,10 +91,56 @@ struct ChatConversationTests {
     }
 
     @Test
+    func testConversationPinsProviderAndCarriesPortableHistory() async throws {
+        let firstProvider = ModelProviderConfiguration(
+            kind: .liteLLM,
+            name: "First",
+            baseURL: "https://first.example.com",
+            apiKey: "first",
+            model: "first-model"
+        )
+        let secondProvider = ModelProviderConfiguration(
+            kind: .liteLLM,
+            name: "Second",
+            baseURL: "https://second.example.com",
+            apiKey: "second",
+            model: "second-model"
+        )
+        let providers = SequencedModelProviderStub(
+            values: [firstProvider, secondProvider]
+        )
+        let responses = ChatResponseAdapterStub(
+            batches: [
+                .events([.textDelta("First answer"), .completed("one")]),
+                .events([.textDelta("Second answer"), .completed("two")])
+            ]
+        )
+        let conversation = ChatConversation(providers: providers, responses: responses)
+
+        conversation.submit(
+            "First question",
+            modelContext: InvocationModelContext(
+                selectedContent: "Selected context",
+                screen: .notRequested
+            )
+        )
+        await waitUntilSettled(conversation)
+        conversation.submit("Follow up")
+        await waitUntilSettled(conversation)
+
+        #expect(providers.loadCount == 1)
+        #expect(responses.requests.last?.provider.id == firstProvider.id)
+        let history = try #require(responses.requests.last?.history)
+        #expect(history.count == 2)
+        #expect(history[0].content.contains("Selected context"))
+        #expect(history[1].content == "First answer")
+    }
+
+    @Test
     func testMissingCredentialRejectsTurnWithSettingsRecovery() {
         let responses = ChatResponseAdapterStub(batches: [])
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: nil),
+            providers: ModelProviderStub(value: nil),
             responses: responses
         )
 
@@ -111,7 +158,7 @@ struct ChatConversationTests {
             batches: [.events([.textDelta("Answer"), .completed("done")])]
         )
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
         let outcome = ScreenContextOutcome(
@@ -142,7 +189,7 @@ struct ChatConversationTests {
             ]
         )
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
         let attachment = ScreenAttachment(imageData: Data([4, 5, 6]))
@@ -177,7 +224,7 @@ struct ChatConversationTests {
             batches: [.failure(ChatResponseAdapterStub.Failure.failed)]
         )
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
 
@@ -193,7 +240,7 @@ struct ChatConversationTests {
     func testStartingNewConversationCancelsAndClearsCurrentTurn() {
         let responses = ChatResponseAdapterStub(batches: [.pending])
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
         conversation.submit("Hello")
@@ -210,7 +257,7 @@ struct ChatConversationTests {
     func testCancelledTurnCannotFinishANewerTurn() async {
         let responses = ChatResponseAdapterStub(batches: [.pending, .pending])
         let conversation = ChatConversation(
-            credentials: ChatCredentialStub(value: "secret"),
+            providers: ModelProviderStub(value: testProvider),
             responses: responses
         )
 
@@ -254,11 +301,32 @@ struct ChatConversationTests {
 }
 
 @MainActor
-private struct ChatCredentialStub: ChatCredentialProviding {
-    let value: String?
+private let testProvider = ModelProviderConfiguration(
+    kind: .openAI,
+    apiKey: "secret",
+    model: "test-model"
+)
 
-    func loadCredential() -> String? {
+private struct ModelProviderStub: ModelProviderProviding {
+    let value: ModelProviderConfiguration?
+
+    func loadActiveProvider() -> ModelProviderConfiguration? {
         value
+    }
+}
+
+@MainActor
+private final class SequencedModelProviderStub: ModelProviderProviding {
+    private let values: [ModelProviderConfiguration]
+    private(set) var loadCount = 0
+
+    init(values: [ModelProviderConfiguration]) {
+        self.values = values
+    }
+
+    func loadActiveProvider() -> ModelProviderConfiguration? {
+        defer { loadCount += 1 }
+        return values[min(loadCount, values.count - 1)]
     }
 }
 

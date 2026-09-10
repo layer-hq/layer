@@ -62,7 +62,11 @@ func insertRequestIncludesScreenOnlyWhenPresentAndKeepsSelectionAsEditBoundary()
             ),
             interactionTarget: InvocationInteractionTarget()
         ),
-        credential: "secret"
+        provider: ModelProviderConfiguration(
+            kind: .openAI,
+            apiKey: "secret",
+            model: "test-model"
+        )
     )
     let withoutScreen = insertChatRequest(
         instruction: "Tighten this",
@@ -73,7 +77,11 @@ func insertRequestIncludesScreenOnlyWhenPresentAndKeepsSelectionAsEditBoundary()
             ),
             interactionTarget: InvocationInteractionTarget()
         ),
-        credential: "secret"
+        provider: ModelProviderConfiguration(
+            kind: .openAI,
+            apiKey: "secret",
+            model: "test-model"
+        )
     )
 
     #expect(withScreen.prompt.contains("Original sentence."))
@@ -121,7 +129,7 @@ func buildsTableInsertContent() throws {
 
 @Test
 func rejectsMalformedTableInsertContent() {
-    #expect(throws: OpenAIClientError.self) {
+    #expect(throws: ModelProviderClientError.self) {
         try InsertResult(
             responseText: #"{"kind":"table","text":"","rows":[["A"],["B","C"]]}"#
         )

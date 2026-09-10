@@ -205,11 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showChat(with prompt: String) {
-        guard let credential = StoredChatCredentialAdapter().loadCredential(),
-              !credential.isEmpty else {
+        guard StoredModelProviderAdapter().loadActiveProvider() != nil else {
             notchPanel?.invoke(
                 notice: Notice(
-                    message: "Add an OpenAI API key in Settings before sending a message.",
+                    message: "Add and select a model provider in Settings before sending a message.",
                     recovery: .settings
                 )
             )
@@ -241,11 +240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard let credential = StoredChatCredentialAdapter().loadCredential(),
-              !credential.isEmpty else {
+        guard let provider = StoredModelProviderAdapter().loadActiveProvider() else {
             notchPanel?.invoke(
                 notice: Notice(
-                    message: "Add an OpenAI API key in Settings before sending a message.",
+                    message: "Add and select a model provider in Settings before sending a message.",
                     recovery: .settings
                 )
             )
@@ -293,12 +291,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let request = insertChatRequest(
                 instruction: prompt,
                 inputs: inputs,
-                credential: credential
+                provider: provider
             )
 
             do {
                 var responseText = ""
-                for try await event in OpenAIClient().streamResponse(for: request) {
+                for try await event in ModelProviderClient().streamResponse(for: request) {
                     if case .textDelta(let delta) = event {
                         responseText += delta
                     }
@@ -405,14 +403,14 @@ func insertionPrompt(instruction: String, selectedText: String?) -> String {
 func insertChatRequest(
     instruction: String,
     inputs: InvocationInputs,
-    credential: String
+    provider: ModelProviderConfiguration
 ) -> ChatResponseRequest {
     ChatResponseRequest(
         prompt: insertionPrompt(
             instruction: instruction,
             selectedText: inputs.modelContext.selectedContent
         ),
-        credential: credential,
+        provider: provider,
         instructions: """
             Edit the user's selected text according to their instruction. \
             Preserve all unaffected content and integrate additions in the \

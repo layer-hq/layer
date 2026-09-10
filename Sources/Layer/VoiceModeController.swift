@@ -25,7 +25,7 @@ final class VoiceModeController: NSObject, ObservableObject {
     @Published private(set) var state: VoiceModeState = .idle
     @Published private(set) var notice: Notice?
 
-    private let credentials: any ChatCredentialProviding
+    private let providers: any ModelProviderProviding
     private var peerConnection: RTCPeerConnection?
     private var dataChannel: RTCDataChannel?
     private var remoteAudioTrack: RTCAudioTrack?
@@ -44,9 +44,9 @@ final class VoiceModeController: NSObject, ObservableObject {
     }()
 
     init(
-        credentials: any ChatCredentialProviding = StoredChatCredentialAdapter()
+        providers: any ModelProviderProviding = StoredModelProviderAdapter()
     ) {
-        self.credentials = credentials
+        self.providers = providers
         super.init()
     }
 
@@ -58,9 +58,16 @@ final class VoiceModeController: NSObject, ObservableObject {
 
     func start(inputs: InvocationInputs? = nil) {
         guard state == .idle else { return }
-        guard let apiKey = credentials.loadCredential(), !apiKey.isEmpty else {
+        guard let provider = providers.loadActiveProvider() else {
             notice = Notice(
-                message: "Add an OpenAI API key in Settings before starting voice mode.",
+                message: "Add and select a model provider in Settings before starting voice mode.",
+                recovery: .settings
+            )
+            return
+        }
+        guard provider.kind.supportsRealtimeVoice else {
+            notice = Notice(
+                message: "Voice mode currently requires an OpenAI connection. Select one in Settings.",
                 recovery: .settings
             )
             return
@@ -76,7 +83,7 @@ final class VoiceModeController: NSObject, ObservableObject {
                 guard await Self.microphoneAllowed() else {
                     throw VoiceModeError.microphoneDenied
                 }
-                try await connect(apiKey: apiKey)
+                try await connect(apiKey: provider.apiKey)
                 try Task.checkCancellation()
                 sendOpeningMessagesIfNeeded()
             } catch is CancellationError {

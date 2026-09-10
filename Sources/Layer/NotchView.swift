@@ -98,7 +98,10 @@ struct NotchView: View {
     let onContentHeightChange: (CGFloat) -> Void
 
     @State private var prompt = ""
-    @AppStorage("openAIAPIKey") private var apiKey = ""
+    @AppStorage(ModelProviderPreferences.configurationsKey)
+    private var storedProviderConfigurations = ""
+    @AppStorage(ModelProviderPreferences.selectedConfigurationIDKey)
+    private var selectedProviderID = ""
     @AppStorage("takeScreenContext") private var takeScreenContext = false
     @AppStorage("includeSelectedContent") private var includeSelectedContent = false
     @State private var promptIsFocused = false
@@ -181,8 +184,8 @@ struct NotchView: View {
                 noticeBanner(notice) { voiceMode.dismissNotice() }
             }
 
-            if apiKey.isEmpty {
-                WarningBanner(message: "OpenAI API key is not present") {
+            if !hasActiveProvider {
+                WarningBanner(message: "No model provider is selected") {
                     SwiftUI.Button(action: showSettings) {
                         Text("Open Settings")
                     }
@@ -283,6 +286,12 @@ struct NotchView: View {
             }
         }
         .padding(18)
+    }
+
+    private var hasActiveProvider: Bool {
+        _ = storedProviderConfigurations
+        _ = selectedProviderID
+        return ModelProviderPreferences.activeConfiguration() != nil
     }
 
     private var canSubmit: Bool {
