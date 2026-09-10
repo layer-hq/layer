@@ -19,7 +19,7 @@ struct LayerApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Check for Updates…") {
+                SwiftUI.Button("Check for Updates…") {
                     updaterController.checkForUpdates(nil)
                 }
             }
