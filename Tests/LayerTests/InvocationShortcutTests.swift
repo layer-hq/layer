@@ -78,4 +78,66 @@ struct InvocationShortcutTests {
         )
         #expect(!pressAfterOtherModifier)
     }
+
+    @Test
+    func fnHoldBeginsOnPressEndsOnReleaseAndCancelsWithAnotherModifier() {
+        var recognizer = FnHoldRecognizer()
+
+        #expect(
+            recognizer.process(
+                flags: .function,
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == .began
+        )
+        #expect(
+            recognizer.process(
+                flags: [],
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == .ended
+        )
+
+        recognizer = FnHoldRecognizer()
+        #expect(
+            recognizer.process(
+                flags: .function,
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == .began
+        )
+        #expect(
+            recognizer.process(
+                flags: [.function, .shift],
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == .cancelled
+        )
+        #expect(
+            recognizer.process(
+                flags: [],
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == nil
+        )
+    }
+
+    @Test
+    func fnHoldCancelsWhenAnotherKeyArrives() {
+        var recognizer = FnHoldRecognizer()
+        #expect(
+            recognizer.process(
+                flags: .function,
+                keyCode: UInt16(kVK_Function),
+                type: .flagsChanged
+            ) == .began
+        )
+        #expect(
+            recognizer.process(
+                flags: .function,
+                keyCode: UInt16(kVK_ANSI_A),
+                type: .keyDown
+            ) == .cancelled
+        )
+    }
 }

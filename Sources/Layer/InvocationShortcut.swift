@@ -86,11 +86,10 @@ enum SelectionShortcutPreferences {
 }
 
 enum DictationShortcutPreferences {
-    // Keep these persisted keys so existing ⌘⇧M customizations carry over.
-    static let isEnabledKey = "voiceShortcutEnabled"
-    static let modifierFlagsKey = "voiceShortcutModifierFlags"
-    static let characterKey = "voiceShortcutCharacter"
-    static let keyCodeKey = "voiceShortcutKeyCode"
+    static let isEnabledKey = "dictationShortcutEnabled"
+    static let modifierFlagsKey = "dictationShortcutModifierFlags"
+    static let characterKey = "dictationShortcutCharacter"
+    static let keyCodeKey = "dictationShortcutKeyCode"
     static let defaultModifiers: NSEvent.ModifierFlags = [.command, .shift]
     static let defaultKeyCode = UInt32(kVK_ANSI_M)
 
@@ -231,6 +230,55 @@ final class GlobalSelectionShortcut {
         if modifiers.contains(.option) { result |= UInt32(optionKey) }
         if modifiers.contains(.control) { result |= UInt32(controlKey) }
         return result
+    }
+}
+
+enum FnHoldEvent: Equatable {
+    case began
+    case ended
+    case cancelled
+}
+
+struct FnHoldRecognizer {
+    private var isDown = false
+    private var held = false
+
+    mutating func process(
+        flags: NSEvent.ModifierFlags,
+        keyCode: UInt16,
+        type: NSEvent.EventType
+    ) -> FnHoldEvent? {
+        let flags = flags.intersection(.deviceIndependentFlagsMask)
+        let fnDown = flags.contains(.function)
+        let extraModifiers = !flags.subtracting(.function).isEmpty
+
+        if type == .keyDown {
+            guard held, keyCode != UInt16(kVK_Function) else { return nil }
+            held = false
+            isDown = fnDown
+            return .cancelled
+        }
+
+        guard type == .flagsChanged else { return nil }
+
+        if fnDown, !extraModifiers, !isDown {
+            isDown = true
+            held = true
+            return .began
+        }
+        if held, fnDown, extraModifiers {
+            held = false
+            isDown = true
+            return .cancelled
+        }
+        if held, !fnDown {
+            held = false
+            isDown = false
+            return .ended
+        }
+
+        isDown = fnDown
+        return nil
     }
 }
 

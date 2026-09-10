@@ -160,6 +160,7 @@ struct NotchView: View {
                         }
                     }
                     .onReceive(dictation.transcripts) { transcript in
+                        guard dictation.surface == .notch else { return }
                         prompt = appendingDictation(transcript, to: prompt)
                     }
             }
@@ -178,7 +179,8 @@ struct NotchView: View {
 
                 Spacer()
 
-                if let label = voiceMode.state.label ?? dictation.state.label {
+                if let label = voiceMode.state.label
+                    ?? (dictation.isNotchActive ? dictation.state.label : nil) {
                     Text(label)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -199,7 +201,7 @@ struct NotchView: View {
                 noticeBanner(notice) { voiceMode.dismissNotice() }
             }
 
-            if let notice = dictation.notice {
+            if let notice = dictation.notice, dictation.surface == .notch {
                 noticeBanner(notice) { dictation.dismissNotice() }
             }
 
@@ -216,7 +218,7 @@ struct NotchView: View {
                 text: $prompt,
                 shouldFocus: isExpanded
                     && !voiceMode.isActive
-                    && !dictation.isActive
+                    && !dictation.isNotchActive
                     && !session.isGenerating,
                 focusRequests: promptFocusRequests,
                 onCommandReturn: { submit(insertMode: true) },
@@ -224,7 +226,7 @@ struct NotchView: View {
                 lineLimit: 1...5,
                 textInsets: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
                 minTextHeight: 62,
-                isDisabled: voiceMode.isActive || dictation.isActive || session.isGenerating,
+                isDisabled: voiceMode.isActive || dictation.isNotchActive || session.isGenerating,
                 onFocusChange: { promptIsFocused = $0 },
                 onSubmit: { _ in submit(insertMode: false) }
             ) {
@@ -251,20 +253,18 @@ struct NotchView: View {
                     .accessibilityHint("May briefly use the clipboard when required.")
 
                     Button(
-                        icon: Image(
-                            systemName: dictation.state == .recording
-                                ? "mic.fill"
-                                : "mic"
-                        ),
-                        label: dictation.state == .recording ? "Stop" : "Dictate",
-                        showsProgress: dictation.state == .transcribing,
-                        isSelected: dictation.state == .recording,
+                        icon: Image(systemName: isNotchRecording ? "mic.fill" : "mic"),
+                        label: isNotchRecording ? "Stop" : "Dictate",
+                        showsProgress: dictation.isNotchActive
+                            && dictation.state == .transcribing,
+                        isSelected: isNotchRecording,
                         action: onToggleDictation
                     )
                     .disabled(
                         voiceMode.isActive
                             || session.isGenerating
                             || dictation.state == .transcribing
+                            || dictation.isChatActive
                     )
 
                     Spacer(minLength: 8)
@@ -334,10 +334,14 @@ struct NotchView: View {
         return ModelProviderPreferences.activeConfiguration() != nil
     }
 
+    private var isNotchRecording: Bool {
+        dictation.isNotchActive && dictation.state == .recording
+    }
+
     private var canSubmit: Bool {
         !session.isGenerating
             && !voiceMode.isActive
-            && !dictation.isActive
+            && !dictation.isNotchActive
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 

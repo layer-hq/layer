@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inputsCollector = InvocationInputsCollector()
     private let screenContextAcquisition = ScreenContextAcquisition()
     private var invocationShortcutRecognizer = DoubleModifierPressRecognizer()
+    private var fnHoldRecognizer = FnHoldRecognizer()
     private var selectionShortcut: GlobalSelectionShortcut?
     private var dictationShortcut: GlobalSelectionShortcut?
     private var localShortcutMonitor: Any?
@@ -84,13 +85,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localShortcutMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.flagsChanged, .keyDown]
         ) { [weak self] event in
+            self?.handleFnHoldEvent(event)
             self?.handleInvocationShortcutEvent(event)
             return event
         }
         globalShortcutMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: .flagsChanged
+            matching: [.flagsChanged, .keyDown]
         ) { [weak self] event in
+            self?.handleFnHoldEvent(event)
+            guard event.type == .flagsChanged else { return }
             self?.handleInvocationShortcutEvent(event)
+        }
+    }
+
+    private func handleFnHoldEvent(_ event: NSEvent) {
+        guard let fnEvent = fnHoldRecognizer.process(
+            flags: event.modifierFlags,
+            keyCode: event.keyCode,
+            type: event.type
+        ) else { return }
+
+        switch fnEvent {
+        case .began:
+            beginDictation()
+        case .ended:
+            endDictation()
+        case .cancelled:
+            notchPanel?.cancelDictation()
         }
     }
 
@@ -129,8 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func beginDictation() {
-        let panel = notchPanel ?? makeNotchPanel()
-        panel.beginDictation()
+        if let chat = chatWindowControllers.first(where: { $0.window?.isKeyWindow == true }) {
+            chat.beginDictation()
+            return
+        }
+        (notchPanel ?? makeNotchPanel()).beginDictation()
     }
 
     private func endDictation() {
@@ -354,7 +378,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         let applicationToRestore = inputs.interactionTarget.application
 
+        let panel = notchPanel ?? makeNotchPanel()
         let controller = ChatWindowController(
+            dictation: panel.dictation,
             onOpenScreenRecordingSettings: {
                 openScreenRecordingSettings()
             }

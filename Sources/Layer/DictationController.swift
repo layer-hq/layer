@@ -2,6 +2,11 @@ import AVFoundation
 import Combine
 import Foundation
 
+enum DictationSurface: Equatable {
+    case notch
+    case chat(UUID)
+}
+
 enum DictationState: Equatable {
     case idle
     case recording
@@ -46,6 +51,7 @@ final class DictationController: ObservableObject {
 
     @Published private(set) var state: DictationState = .idle
     @Published private(set) var notice: Notice?
+    @Published private(set) var surface: DictationSurface = .notch
 
     let transcripts = PassthroughSubject<String, Never>()
 
@@ -61,11 +67,16 @@ final class DictationController: ObservableObject {
     }
 
     var isActive: Bool { state != .idle }
+    var isNotchActive: Bool { isActive && surface == .notch }
+    var isChatActive: Bool {
+        guard case .chat = surface else { return false }
+        return isActive
+    }
 
-    func toggle() {
+    func toggle(surface: DictationSurface) {
         switch state {
         case .idle:
-            start()
+            start(surface: surface)
         case .recording:
             stopAndTranscribe()
         case .transcribing:
@@ -73,8 +84,9 @@ final class DictationController: ObservableObject {
         }
     }
 
-    func start() {
+    func start(surface: DictationSurface) {
         guard state == .idle else { return }
+        self.surface = surface
         guard let provider = providers.loadActiveProvider() else {
             notice = Notice(
                 message: "Add and select a model provider in Settings before starting dictation.",
