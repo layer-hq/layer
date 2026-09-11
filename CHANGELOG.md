@@ -7,10 +7,18 @@ Layer follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-11
+
 ### Added
 
 - OpenRouter as a hosted model provider for Chat and Insert, with model loading
   and a fixed official API endpoint.
+
+### Changed
+
+- Chat conversation window is easier to read and sized independently of the
+  Notch.
+- Voice mode is temporarily hidden from the Notch and Settings.
 
 ## [0.2.0] - 2026-09-10
 

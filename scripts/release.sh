@@ -73,7 +73,8 @@ xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 codesign --verify --verbose=2 "$DMG"
 
-MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG" | awk 'END { print $NF }')
+MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG" |
+  awk -F'\t' 'END { gsub(/^[ \t]+|[ \t]+$/, "", $NF); print $NF }')
 spctl --assess --type execute --verbose=4 "$MOUNT/Layer.app"
 hdiutil detach "$MOUNT"
 MOUNT=""
