@@ -5,13 +5,17 @@ import SwiftUI
 @MainActor
 final class ChatWindowController: NSWindowController, NSWindowDelegate {
     private let conversation = ChatConversation()
+    private let dictation: DictationController
+    private let dictationID = UUID()
     private let composerFocusRequests = PassthroughSubject<Void, Never>()
     private var escapeKeyMonitor: EscapeKeyMonitor?
     var onClose: (() -> Void)?
 
     init(
+        dictation: DictationController,
         onOpenScreenRecordingSettings: @escaping () -> Void
     ) {
+        self.dictation = dictation
         let conversation = self.conversation
         let composerFocusRequests = self.composerFocusRequests
         let window = NSWindow(
@@ -29,6 +33,8 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(
             rootView: ChatView(
                 conversation: conversation,
+                dictation: dictation,
+                dictationID: dictationID,
                 composerFocusRequests: composerFocusRequests.eraseToAnyPublisher(),
                 onOpenScreenRecordingSettings: onOpenScreenRecordingSettings,
                 onClose: { [weak window] in window?.close() },
@@ -54,8 +60,14 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        escapeKeyMonitor = EscapeKeyMonitor { [weak window] keyWindow in
-            guard let window, keyWindow === window else { return false }
+        escapeKeyMonitor = EscapeKeyMonitor { [weak self] keyWindow in
+            guard let self, let window = self.window, keyWindow === window else {
+                return false
+            }
+            if dictation.surface == .chat(dictationID), dictation.isActive {
+                dictation.cancel()
+                return true
+            }
             window.close()
             return true
         }
@@ -64,6 +76,10 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func beginDictation() {
+        dictation.start(surface: .chat(dictationID))
     }
 
     func show(
@@ -77,6 +93,9 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if dictation.surface == .chat(dictationID) {
+            dictation.cancel()
+        }
         conversation.startNewConversation()
         escapeKeyMonitor = nil
         onClose?()

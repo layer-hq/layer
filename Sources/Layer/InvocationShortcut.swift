@@ -85,11 +85,11 @@ enum SelectionShortcutPreferences {
     }
 }
 
-enum VoiceShortcutPreferences {
-    static let isEnabledKey = "voiceShortcutEnabled"
-    static let modifierFlagsKey = "voiceShortcutModifierFlags"
-    static let characterKey = "voiceShortcutCharacter"
-    static let keyCodeKey = "voiceShortcutKeyCode"
+enum DictationShortcutPreferences {
+    static let isEnabledKey = "dictationShortcutEnabled"
+    static let modifierFlagsKey = "dictationShortcutModifierFlags"
+    static let characterKey = "dictationShortcutCharacter"
+    static let keyCodeKey = "dictationShortcutKeyCode"
     static let defaultModifiers: NSEvent.ModifierFlags = [.command, .shift]
     static let defaultKeyCode = UInt32(kVK_ANSI_M)
 
@@ -127,15 +127,27 @@ final class GlobalSelectionShortcut {
     private var hotKey: EventHotKeyRef?
     private let hotKeyID: UInt32
     private let action: @MainActor () -> Void
+    private let releaseAction: (@MainActor () -> Void)?
 
-    init(id: UInt32, action: @escaping @MainActor () -> Void) {
+    init(
+        id: UInt32,
+        action: @escaping @MainActor () -> Void,
+        releaseAction: (@MainActor () -> Void)? = nil
+    ) {
         self.hotKeyID = id
         self.action = action
+        self.releaseAction = releaseAction
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        var eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
         InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData in
@@ -162,12 +174,16 @@ final class GlobalSelectionShortcut {
                     guard pressed.id == shortcut.hotKeyID else {
                         return OSStatus(eventNotHandledErr)
                     }
-                    shortcut.action()
+                    if GetEventKind(event) == UInt32(kEventHotKeyReleased) {
+                        shortcut.releaseAction?()
+                    } else {
+                        shortcut.action()
+                    }
                     return noErr
                 }
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
@@ -214,6 +230,55 @@ final class GlobalSelectionShortcut {
         if modifiers.contains(.option) { result |= UInt32(optionKey) }
         if modifiers.contains(.control) { result |= UInt32(controlKey) }
         return result
+    }
+}
+
+enum FnHoldEvent: Equatable {
+    case began
+    case ended
+    case cancelled
+}
+
+struct FnHoldRecognizer {
+    private var isDown = false
+    private var held = false
+
+    mutating func process(
+        flags: NSEvent.ModifierFlags,
+        keyCode: UInt16,
+        type: NSEvent.EventType
+    ) -> FnHoldEvent? {
+        let flags = flags.intersection(.deviceIndependentFlagsMask)
+        let fnDown = flags.contains(.function)
+        let extraModifiers = !flags.subtracting(.function).isEmpty
+
+        if type == .keyDown {
+            guard held, keyCode != UInt16(kVK_Function) else { return nil }
+            held = false
+            isDown = fnDown
+            return .cancelled
+        }
+
+        guard type == .flagsChanged else { return nil }
+
+        if fnDown, !extraModifiers, !isDown {
+            isDown = true
+            held = true
+            return .began
+        }
+        if held, fnDown, extraModifiers {
+            held = false
+            isDown = true
+            return .cancelled
+        }
+        if held, !fnDown {
+            held = false
+            isDown = false
+            return .ended
+        }
+
+        isDown = fnDown
+        return nil
     }
 }
 

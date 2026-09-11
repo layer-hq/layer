@@ -22,6 +22,8 @@ struct ScreenSelectionOverlayFocusTests {
         var scrollButtonIsVisible = false
         let view = ChatView(
             conversation: conversation,
+            dictation: DictationController(),
+            dictationID: UUID(),
             composerFocusRequests: Empty<Void, Never>().eraseToAnyPublisher(),
             onOpenScreenRecordingSettings: {},
             onClose: {},
@@ -66,6 +68,8 @@ struct ScreenSelectionOverlayFocusTests {
         )
         let view = ChatView(
             conversation: conversation,
+            dictation: DictationController(),
+            dictationID: UUID(),
             composerFocusRequests: Empty<Void, Never>().eraseToAnyPublisher(),
             onOpenScreenRecordingSettings: {},
             onClose: {}

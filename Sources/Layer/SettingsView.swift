@@ -41,16 +41,16 @@ struct SettingsView: View {
     private var selectionCharacter = "A"
     @AppStorage(SelectionShortcutPreferences.keyCodeKey)
     private var selectionKeyCode = 0
-    @AppStorage(VoiceShortcutPreferences.isEnabledKey)
-    private var voiceShortcutEnabled = true
-    @AppStorage(VoiceShortcutPreferences.modifierFlagsKey)
-    private var voiceModifierFlags = Int(
-        VoiceShortcutPreferences.defaultModifiers.rawValue
+    @AppStorage(DictationShortcutPreferences.isEnabledKey)
+    private var dictationShortcutEnabled = true
+    @AppStorage(DictationShortcutPreferences.modifierFlagsKey)
+    private var dictationModifierFlags = Int(
+        DictationShortcutPreferences.defaultModifiers.rawValue
     )
-    @AppStorage(VoiceShortcutPreferences.characterKey)
-    private var voiceCharacter = "M"
-    @AppStorage(VoiceShortcutPreferences.keyCodeKey)
-    private var voiceKeyCode = Int(kVK_ANSI_M)
+    @AppStorage(DictationShortcutPreferences.characterKey)
+    private var dictationCharacter = "M"
+    @AppStorage(DictationShortcutPreferences.keyCodeKey)
+    private var dictationKeyCode = Int(kVK_ANSI_M)
 
     var body: some View {
         NavigationSplitView {
@@ -259,7 +259,8 @@ struct SettingsView: View {
                 ShortcutRecorder(
                     modifierFlags: $selectionModifierFlags,
                     character: $selectionCharacter,
-                    keyCode: $selectionKeyCode
+                    keyCode: $selectionKeyCode,
+                    accessibilityLabel: "Select shortcut"
                 )
                 .frame(width: 140, height: 28)
             }
@@ -267,13 +268,13 @@ struct SettingsView: View {
 
             Divider()
 
-            Toggle("Enable Voice Mode shortcut", isOn: $voiceShortcutEnabled)
+            Toggle("Enable Dictation fallback shortcut", isOn: $dictationShortcutEnabled)
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Voice Mode")
+                    Text("Dictation")
                         .font(.headline)
-                    Text("Starts or stops voice mode.")
+                    Text("Hold Fn to dictate into the prompt. This chord is the fallback when Fn is unavailable.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -281,13 +282,14 @@ struct SettingsView: View {
                 Spacer()
 
                 ShortcutRecorder(
-                    modifierFlags: $voiceModifierFlags,
-                    character: $voiceCharacter,
-                    keyCode: $voiceKeyCode
+                    modifierFlags: $dictationModifierFlags,
+                    character: $dictationCharacter,
+                    keyCode: $dictationKeyCode,
+                    accessibilityLabel: "Dictation shortcut"
                 )
                 .frame(width: 140, height: 28)
             }
-            .disabled(!voiceShortcutEnabled)
+            .disabled(!dictationShortcutEnabled)
 
             Text("macOS may ask for Input Monitoring permission so the shortcut works in other apps.")
                 .font(.caption)
@@ -403,9 +405,12 @@ private struct ShortcutRecorder: NSViewRepresentable {
     @Binding var modifierFlags: Int
     @Binding var character: String
     @Binding var keyCode: Int
+    let accessibilityLabel: String
 
     func makeNSView(context: Context) -> ShortcutRecorderControl {
-        ShortcutRecorderControl()
+        let control = ShortcutRecorderControl()
+        control.setAccessibilityLabel(accessibilityLabel)
+        return control
     }
 
     func updateNSView(_ control: ShortcutRecorderControl, context: Context) {
@@ -414,6 +419,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
             character,
             UInt16(keyCode)
         )
+        control.setAccessibilityLabel(accessibilityLabel)
         control.onChange = {
             modifierFlags = Int($0.rawValue)
             character = $1
@@ -436,7 +442,6 @@ final class ShortcutRecorderControl: NSButton {
         target = self
         action = #selector(beginRecording)
         updateTitle()
-        setAccessibilityLabel("Select shortcut")
     }
 
     @available(*, unavailable)

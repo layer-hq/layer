@@ -28,6 +28,8 @@ enum ChatScrollLayout {
 
 struct ChatView: View {
     @ObservedObject var conversation: ChatConversation
+    @ObservedObject var dictation: DictationController
+    let dictationID: UUID
     let composerFocusRequests: AnyPublisher<Void, Never>
     let onOpenScreenRecordingSettings: () -> Void
     let onClose: () -> Void
@@ -132,8 +134,10 @@ struct ChatView: View {
                                 }
 
                                 if let notice = conversation.notice {
-                                    errorBanner(notice)
-                                        .id("chat-error")
+                                    errorBanner(notice) {
+                                        conversation.dismissNotice()
+                                    }
+                                    .id("chat-error")
                                 }
                             }
 
@@ -205,12 +209,19 @@ struct ChatView: View {
         }
     }
 
-    private func errorBanner(_ notice: Notice) -> some View {
+    private func errorBanner(
+        _ notice: Notice,
+        dismiss: @escaping () -> Void
+    ) -> some View {
         WarningBanner(message: notice.message) {
             Group {
                 if notice.recovery == .screenRecordingSettings {
                     SwiftUI.Button("System Settings") {
                         onOpenScreenRecordingSettings()
+                    }
+                } else if notice.recovery == .microphoneSettings {
+                    SwiftUI.Button("System Settings") {
+                        openMicrophoneSettings()
                     }
                 } else if notice.recovery == .settings {
                     SettingsLink {
@@ -220,9 +231,7 @@ struct ChatView: View {
             }
             .controlSize(.small)
 
-            SwiftUI.Button {
-                conversation.dismissNotice()
-            } label: {
+            SwiftUI.Button(action: dismiss) {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
@@ -231,53 +240,99 @@ struct ChatView: View {
     }
 
     private var composer: some View {
-        PromptField(
-            text: $conversation.draft,
-            placeholder: "Ask follow-up…",
-            shouldFocus: true,
-            focusRequests: composerFocusRequests,
-            showsChrome: false,
-            lineLimit: 1...5,
-            textInsets: EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18),
-            minTextHeight: 56,
-            onFocusChange: { composerIsFocused = $0 },
-            onSubmit: { _ in conversation.submitDraft() }
-        ) {
-            HStack {
-                Spacer()
-
-                Button(
-                    label: "Send",
-                    shortcut: "↵",
-                    appearance: .filled
-                ) {
-                    conversation.submitDraft()
+        VStack(alignment: .leading, spacing: 8) {
+            if let notice = dictation.notice, isThisChat {
+                errorBanner(notice) {
+                    dictation.dismissNotice()
                 }
-                .disabled(!conversation.canSubmitDraft)
-                .accessibilityLabel("Send message")
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+
+            PromptField(
+                text: $conversation.draft,
+                placeholder: "Ask follow-up…",
+                shouldFocus: !isChatDictating,
+                focusRequests: composerFocusRequests,
+                showsChrome: false,
+                lineLimit: 1...5,
+                textInsets: EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18),
+                minTextHeight: 56,
+                isDisabled: isChatDictating,
+                onFocusChange: { composerIsFocused = $0 },
+                onSubmit: { _ in conversation.submitDraft() }
+            ) {
+                HStack(spacing: 8) {
+                    if isChatDictating, let label = dictation.state.label {
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(
+                        icon: Image(systemName: isChatRecording ? "mic.fill" : "mic"),
+                        label: isChatRecording ? "Stop" : "Dictate",
+                        showsProgress: isChatDictating
+                            && dictation.state == .transcribing,
+                        isSelected: isChatRecording
+                    ) {
+                        dictation.toggle(surface: .chat(dictationID))
+                    }
+                    .disabled(
+                        dictation.state == .transcribing
+                            || (dictation.isActive && !isThisChat)
+                    )
+
+                    Button(
+                        label: "Send",
+                        shortcut: "↵",
+                        appearance: .filled
+                    ) {
+                        conversation.submitDraft()
+                    }
+                    .disabled(!conversation.canSubmitDraft || isChatDictating)
+                    .accessibilityLabel("Send message")
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.34))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        composerIsFocused
+                            ? Color.accentColor
+                            : Color(nsColor: .separatorColor),
+                        lineWidth: composerIsFocused ? 2 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeOut(duration: 0.1), value: composerIsFocused)
+            .animation(.easeOut(duration: 0.1), value: dictation.state)
         }
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.34))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(
-                    composerIsFocused
-                        ? Color.accentColor
-                        : Color(nsColor: .separatorColor),
-                    lineWidth: composerIsFocused ? 2 : 1
-                )
-                .allowsHitTesting(false)
-        }
-        .animation(.easeOut(duration: 0.1), value: composerIsFocused)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+        .onReceive(dictation.transcripts) { transcript in
+            guard isThisChat else { return }
+            conversation.draft = appendingDictation(transcript, to: conversation.draft)
+        }
     }
 
     private var latestUserMessageID: UUID? {
         conversation.messages.last(where: { $0.role == .user })?.id
+    }
+
+    private var isThisChat: Bool {
+        dictation.surface == .chat(dictationID)
+    }
+
+    private var isChatDictating: Bool {
+        dictation.isActive && isThisChat
+    }
+
+    private var isChatRecording: Bool {
+        isChatDictating && dictation.state == .recording
     }
 
     private func tailSpacer(viewportHeight: CGFloat) -> CGFloat {

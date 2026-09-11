@@ -7,7 +7,8 @@ over the Notch or press the configured modifier key twice, enter a prompt, and
 receive a streamed response from the selected model provider. OpenAI models may
 search the web when a Turn needs current information. A Turn can include
 selected content from the frontmost app and the active display or a manually
-selected region as visual context.
+selected region as visual context. The prompt also supports release-to-transcribe
+Dictation: hold Fn, or the configured fallback shortcut, then release.
 
 > **Input context disclosure:** When **Include selected content** is enabled,
 > opening the Notch reads the focused field's selected text (via Accessibility,
@@ -40,21 +41,28 @@ selected region as visual context.
   OpenAI-compatible `/v1/chat/completions` endpoint. Storage, logging, web
   access, and downstream-provider retention depend on that proxy's configuration.
 - **Telemetry:** Layer includes no analytics or telemetry.
-- **Microphone:** Required for voice mode, which currently requires an OpenAI
-  connection. Audio is sent to OpenAI's Realtime API only while the Notch
-  microphone control is on.
+- **Microphone:** Required for Voice and Dictation, which currently require an
+  OpenAI connection. Voice audio is sent to OpenAI's Realtime API only while
+  Voice is on. Dictation records a temporary audio file locally, sends it to
+  OpenAI for transcription after recording stops, then deletes it. Cancelling
+  Dictation deletes the temporary recording and aborts any transcription in
+  progress.
 - **Screen Recording:** Required only to capture the active display or a
   selected region for Chat, Voice, Insert, or Select. macOS controls access in
   Privacy & Security settings.
 - **Input Monitoring:** Used for the global double-modifier shortcut so Layer
-  can open while another app is active. The global monitor receives only
-  modifier-key changes, never typed key events, so Layer does not see what you
-  type in other apps. Inside Layer's own windows it also watches for key
-  presses, purely so that a key struck while the modifier is held cancels a
-  pending double tap; that needs no permission, since an app always receives
-  its own key events, and the keys themselves are never read. macOS grants the
-  Input Monitoring permission at the coarse granularity of "input events";
-  there is no narrower scope an app can request.
+  can open while another app is active, and for hold-Fn Dictation. The global
+  monitor receives modifier-key changes and key-down events. Modifier changes
+  are used to start and stop Dictation and to invoke Layer; key-down events are
+  used only to cancel Dictation if another key is pressed while Fn is held.
+  Layer does not record which keys were typed. Inside Layer's own windows it
+  also watches for key presses, purely so that a key struck while the modifier
+  is held cancels a pending double tap, and so Fn-hold Dictation can be
+  cancelled the same way; that needs no permission, since an app always
+  receives its own key events. macOS grants the Input Monitoring permission at
+  the coarse granularity of "input events"; there is no narrower scope an app
+  can request. Select and the Dictation fallback shortcut use registered
+  system-wide key combinations; Layer receives only those shortcuts.
 - **Accessibility:** Required to insert at the cursor in another app (restore
   focus and post paste). When **Include selected content** is enabled, Layer also
   reads the focused field's selected text before taking focus, or if

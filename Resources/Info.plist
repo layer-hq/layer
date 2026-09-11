@@ -34,7 +34,7 @@
         <key>NSLocalNetworkUsageDescription</key>
         <string>Layer connects to model providers that you configure on your local network.</string>
         <key>NSMicrophoneUsageDescription</key>
-        <string>Layer uses your microphone for voice conversations with OpenAI.</string>
+        <string>Layer uses your microphone for voice conversations and dictation with OpenAI.</string>
         <key>NSScreenCaptureUsageDescription</key>
         <string>Layer captures your active display or a selected area to include with your message.</string>
     </dict>
