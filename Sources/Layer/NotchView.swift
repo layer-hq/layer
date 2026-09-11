@@ -104,7 +104,7 @@ struct NotchView: View {
     let onHoverChange: (Bool) -> Void
     let onSelect: () -> Void
     let onSubmitPrompt: (String, Bool) -> Void
-    let onToggleVoice: () -> Void
+    // let onToggleVoice: () -> Void
     let onToggleDictation: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
 
@@ -307,22 +307,22 @@ struct NotchView: View {
 
             HStack(spacing: 10) {
                 Button(
-                        icon: Image(systemName: "viewfinder"),
-                        label: "Select area…",
-                        action: onSelect
-                    )
-                    .disabled(session.isGenerating || dictation.isActive)
-                    .accessibilityHint("Enter select mode")
+                    icon: Image(systemName: "viewfinder"),
+                    label: "Select area…",
+                    action: onSelect
+                )
+                .disabled(session.isGenerating || dictation.isActive)
+                .accessibilityHint("Enter select mode")
 
                 Spacer()
 
-                Button(
-                    icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
-                    label: "Voice mode",
-                    showsProgress: voiceMode.state == .connecting,
-                    action: onToggleVoice
-                )
-                .disabled(dictation.isActive)
+                // Button(
+                //     icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
+                //     label: "Voice mode",
+                //     showsProgress: voiceMode.state == .connecting,
+                //     action: onToggleVoice
+                // )
+                // .disabled(dictation.isActive)
             }
         }
         .padding(18)
