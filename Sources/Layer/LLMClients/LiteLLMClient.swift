@@ -13,11 +13,12 @@ struct LiteLLMClient: ChatResponseStreaming {
         AsyncThrowingStream { continuation in
             let task = Task.detached {
                 do {
+                    let providerName = chatRequest.provider.kind.name
                     guard let endpoint = chatRequest.provider.endpointURL(
                         "chat/completions"
                     ) else {
                         throw ModelProviderClientError.invalidConfiguration(
-                            "The selected LiteLLM connection has an invalid URL."
+                            "The selected \(providerName) connection has an invalid URL."
                         )
                     }
 
@@ -36,7 +37,7 @@ struct LiteLLMClient: ChatResponseStreaming {
 
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse else {
-                        throw ModelProviderClientError.invalidResponse("LiteLLM")
+                        throw ModelProviderClientError.invalidResponse(providerName)
                     }
                     guard (200..<300).contains(httpResponse.statusCode) else {
                         var errorData = Data()
@@ -45,7 +46,7 @@ struct LiteLLMClient: ChatResponseStreaming {
                         }
                         throw ModelProviderClientError.api(
                             message: ProviderResponseParsing.errorMessage(in: errorData)
-                                ?? "LiteLLM request failed (HTTP \(httpResponse.statusCode))."
+                                ?? "\(providerName) request failed (HTTP \(httpResponse.statusCode))."
                         )
                     }
 
@@ -69,7 +70,7 @@ struct LiteLLMClient: ChatResponseStreaming {
                     }
 
                     guard completed else {
-                        throw ModelProviderClientError.streamEndedUnexpectedly("LiteLLM")
+                        throw ModelProviderClientError.streamEndedUnexpectedly(providerName)
                     }
                     continuation.yield(.completed(responseID ?? UUID().uuidString))
                     continuation.finish()

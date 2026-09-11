@@ -123,13 +123,16 @@ struct SettingsView: View {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
                 GridRow {
                     Text("Base URL")
-                    TextField("http://localhost:4000", text: $draftConfiguration.baseURL)
+                    TextField(
+                        draftConfiguration.kind.defaultBaseURL,
+                        text: $draftConfiguration.baseURL
+                    )
                         .textFieldStyle(.roundedBorder)
-                        .disabled(draftConfiguration.kind == .openAI)
+                        .disabled(!draftConfiguration.kind.supportsCustomBaseURL)
                         .help(
-                            draftConfiguration.kind == .openAI
-                                ? "OpenAI uses its official API endpoint."
-                                : "The base URL of your LiteLLM proxy."
+                            draftConfiguration.kind.supportsCustomBaseURL
+                                ? "The base URL of your LiteLLM proxy."
+                                : "\(draftConfiguration.kind.name) uses its official API endpoint."
                         )
                 }
                 GridRow {
@@ -187,8 +190,8 @@ struct SettingsView: View {
                     .keyboardShortcut(.defaultAction)
             }
 
-            if draftConfiguration.kind == .liteLLM {
-                Text("Chat and Insert use LiteLLM's OpenAI-compatible API. Voice currently requires an OpenAI connection.")
+            if draftConfiguration.kind != .openAI {
+                Text("Chat and Insert use \(draftConfiguration.kind.name)'s OpenAI-compatible API. Voice currently requires an OpenAI connection.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -344,8 +347,8 @@ struct SettingsView: View {
     private func saveProvider() {
         var cleaned = draftConfiguration.cleaned()
         cleaned.name = cleaned.kind.name
-        if cleaned.kind == .openAI {
-            cleaned.baseURL = ModelProviderKind.openAI.defaultBaseURL
+        if !cleaned.kind.supportsCustomBaseURL {
+            cleaned.baseURL = cleaned.kind.defaultBaseURL
         }
         guard cleaned.apiRootURL != nil else {
             showError("Enter a valid base URL using http or https.")

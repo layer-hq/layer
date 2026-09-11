@@ -15,6 +15,8 @@ The first tagged release will move these entries under a `[0.1.0]` heading.
 
 ### Added
 
+- OpenRouter as a hosted model provider for Chat and Insert, with model loading
+  and a fixed official API endpoint.
 - Hosted OpenAI web search on every Turn, so the model can use current
   information with the existing API key.
 - Copy img on Select writes the chosen region to the clipboard as PNG and TIFF

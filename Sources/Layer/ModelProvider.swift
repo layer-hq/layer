@@ -2,6 +2,7 @@ import Foundation
 
 enum ModelProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     case openAI
+    case openRouter
     case liteLLM
 
     var id: Self { self }
@@ -9,6 +10,7 @@ enum ModelProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     var name: String {
         switch self {
         case .openAI: "OpenAI"
+        case .openRouter: "OpenRouter"
         case .liteLLM: "LiteLLM"
         }
     }
@@ -16,6 +18,7 @@ enum ModelProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     var defaultBaseURL: String {
         switch self {
         case .openAI: "https://api.openai.com"
+        case .openRouter: "https://openrouter.ai/api/v1"
         case .liteLLM: "http://localhost:4000"
         }
     }
@@ -23,8 +26,13 @@ enum ModelProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     var defaultModel: String {
         switch self {
         case .openAI: "gpt-5.6-terra"
+        case .openRouter: ""
         case .liteLLM: ""
         }
+    }
+
+    var supportsCustomBaseURL: Bool {
+        self == .liteLLM
     }
 
     var supportsRealtimeVoice: Bool {
