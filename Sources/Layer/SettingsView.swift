@@ -190,11 +190,11 @@ struct SettingsView: View {
                     .keyboardShortcut(.defaultAction)
             }
 
-            if draftConfiguration.kind != .openAI {
-                Text("Chat and Insert use \(draftConfiguration.kind.name)'s OpenAI-compatible API. Voice currently requires an OpenAI connection.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            // if draftConfiguration.kind != .openAI {
+            //     Text("Chat and Insert use \(draftConfiguration.kind.name)'s OpenAI-compatible API. Voice currently requires an OpenAI connection.")
+            //         .font(.caption)
+            //         .foregroundStyle(.secondary)
+            // }
 
             if let statusMessage {
                 Label(

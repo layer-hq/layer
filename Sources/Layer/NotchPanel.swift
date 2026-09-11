@@ -108,9 +108,9 @@ final class NotchPanel: OverlayPanel {
                 onSubmitPrompt: { [weak self] prompt, insertMode in
                     self?.submitPrompt(prompt, insertMode: insertMode)
                 },
-                onToggleVoice: { [weak self] in
-                    self?.toggleVoice()
-                },
+                // onToggleVoice: { [weak self] in
+                //     self?.toggleVoice()
+                // },
                 onToggleDictation: { [weak self] in
                     self?.toggleDictation()
                 },
