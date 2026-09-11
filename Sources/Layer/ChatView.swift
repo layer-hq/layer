@@ -418,16 +418,18 @@ private struct ChatMessageRow: View, Equatable {
                 }
             }
             .padding(.vertical, 10)
-            .padding(.horizontal, message.role == .assistant ? 0 : 12)
+            .padding(.horizontal, 12)
             .frame(
                 maxWidth: message.role == .assistant ? .infinity : nil,
                 alignment: .leading
             )
             .background {
-                if message.role == .user {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.16))
-                }
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        message.role == .user
+                            ? AnyShapeStyle(Color.accentColor.opacity(0.16))
+                            : AnyShapeStyle(.ultraThinMaterial)
+                    )
             }
         }
         .frame(maxWidth: .infinity)

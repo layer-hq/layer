@@ -4,6 +4,9 @@ import SwiftUI
 
 @MainActor
 final class ChatWindowController: NSWindowController, NSWindowDelegate {
+    private static let defaultContentSize = NSSize(width: 450, height: 720)
+    private static let minimumContentSize = NSSize(width: 360, height: 480)
+
     private let conversation = ChatConversation()
     private let dictation: DictationController
     private let dictationID = UUID()
@@ -19,7 +22,7 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
         let conversation = self.conversation
         let composerFocusRequests = self.composerFocusRequests
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 480),
+            contentRect: NSRect(origin: .zero, size: Self.defaultContentSize),
             styleMask: [
                 .titled,
                 .closable,
@@ -54,8 +57,8 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
         window.standardWindowButton(.zoomButton)?.isHidden = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 360, height: 480))
-        window.minSize = NSSize(width: 360, height: 480)
+        window.setContentSize(Self.defaultContentSize)
+        window.minSize = Self.minimumContentSize
         window.center()
 
         super.init(window: window)
