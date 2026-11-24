@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 enum NotchMaterialFactory {
@@ -102,8 +103,9 @@ struct NotchView: View {
     let expandedWidth: CGFloat
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
+    let onAttachmentAdded: () -> Void
     let onSelect: () -> Void
-    let onSubmitPrompt: (String, Bool) -> Void
+    let onSubmitPrompt: (String, Bool, [ChatAttachment]) -> Void
     // let onToggleVoice: () -> Void
     let onToggleDictation: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
@@ -116,6 +118,9 @@ struct NotchView: View {
     @AppStorage("takeScreenContext") private var takeScreenContext = false
     @AppStorage("includeSelectedContent") private var includeSelectedContent = false
     @State private var promptIsFocused = false
+    @State private var isFileImporterPresented = false
+    @State private var isAttachmentDropTargeted = false
+    @StateObject private var draftAttachments = DraftAttachments()
 
     var body: some View {
         GeometryReader { geometry in
@@ -145,6 +150,7 @@ struct NotchView: View {
                         alignment: .top
                     )
                     .onHover { hovering in
+                        guard !isAttachmentDropTargeted else { return }
                         onHoverChange(hovering)
                     }
                     .onPreferenceChange(ControlTrayHeightPreferenceKey.self) { height in
@@ -157,6 +163,7 @@ struct NotchView: View {
                     .onChange(of: session.isGenerating) {
                         if !session.isGenerating, !session.isExpanded {
                             prompt = ""
+                            draftAttachments.removeAll()
                         }
                     }
                     .onReceive(dictation.transcripts) { transcript in
@@ -166,6 +173,26 @@ struct NotchView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipShape(shape)
+            .onDrop(
+                of: [UTType.fileURL.identifier, UTType.image.identifier],
+                isTargeted: $isAttachmentDropTargeted,
+                perform: { providers in
+                    guard !session.isGenerating,
+                          !dictation.isActive,
+                          !voiceMode.isActive else { return false }
+                    let accepted = draftAttachments.acceptDrop(providers)
+                    if accepted { onAttachmentAdded() }
+                    return accepted
+                }
+            )
+            .onChange(of: isAttachmentDropTargeted) {
+                guard isAttachmentDropTargeted, !session.isExpanded else { return }
+                onHoverChange(true)
+            }
+            .onChange(of: draftAttachments.attachments) { previous, current in
+                guard current.count > previous.count else { return }
+                onAttachmentAdded()
+            }
         }
     }
 
@@ -205,6 +232,10 @@ struct NotchView: View {
                 noticeBanner(notice) { dictation.dismissNotice() }
             }
 
+            if let notice = draftAttachments.notice {
+                noticeBanner(notice) { draftAttachments.notice = nil }
+            }
+
             if !hasActiveProvider {
                 WarningBanner(message: "No model provider is selected") {
                     SwiftUI.Button(action: showSettings) {
@@ -226,69 +257,87 @@ struct NotchView: View {
                 lineLimit: 1...5,
                 textInsets: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
                 minTextHeight: 62,
+                topAccessory: draftAttachments.attachments.isEmpty ? nil : AnyView(
+                    AttachmentStrip(attachments: draftAttachments.attachments) {
+                        draftAttachments.remove($0)
+                    }
+                    .padding(.top, 12)
+                ),
+                onPasteAttachments: { draftAttachments.acceptPastedItems($0) },
+                onPasteText: { draftAttachments.acceptPastedText($0) },
                 isDisabled: voiceMode.isActive || dictation.isNotchActive || session.isGenerating,
                 onFocusChange: { promptIsFocused = $0 },
                 onSubmit: { _ in submit(insertMode: false) }
             ) {
                 HStack(spacing: 8) {
-                    Button(
-                        icon: Image(systemName: "display"),
-                        label: "Entire screen",
-                        isSelected: takeScreenContext
-                    ) {
-                        takeScreenContext.toggle()
-                    }
-                    .disabled(session.isGenerating)
-                    .accessibilityHint("Include information from the screen with the prompt")
+                        Button(
+                            icon: Image(systemName: "paperclip"),
+                            showsProgress: draftAttachments.isLoading
+                        ) {
+                            isFileImporterPresented = true
+                        }
+                        .disabled(session.isGenerating || dictation.isActive)
+                        .help("Attach up to 5 images, PDFs, or text files (10 MB each, 25 MB total)")
+                        .accessibilityLabel("Attach files")
 
-                    Button(
-                        icon: Image(systemName: "text.quote"),
-                        label: "Selected text",
-                        isSelected: includeSelectedContent
-                    ) {
-                        includeSelectedContent.toggle()
-                    }
-                    .disabled(session.isGenerating)
-                    .help("May briefly use the clipboard when required.")
-                    .accessibilityHint("May briefly use the clipboard when required.")
+                        Button(
+                            icon: Image(systemName: "display"),
+                            label: "Entire screen",
+                            isSelected: takeScreenContext
+                        ) {
+                            takeScreenContext.toggle()
+                        }
+                        .disabled(session.isGenerating)
+                        .accessibilityHint("Include information from the screen with the prompt")
 
-                    Button(
-                        icon: Image(systemName: isNotchRecording ? "mic.fill" : "mic"),
-                        label: isNotchRecording ? "Stop" : "Dictate",
-                        showsProgress: dictation.isNotchActive
-                            && dictation.state == .transcribing,
-                        isSelected: isNotchRecording,
-                        action: onToggleDictation
-                    )
-                    .disabled(
-                        voiceMode.isActive
-                            || session.isGenerating
-                            || dictation.state == .transcribing
-                            || dictation.isChatActive
-                    )
+                        Button(
+                            icon: Image(systemName: "text.quote"),
+                            label: "Selected text",
+                            isSelected: includeSelectedContent
+                        ) {
+                            includeSelectedContent.toggle()
+                        }
+                        .disabled(session.isGenerating)
+                        .help("May briefly use the clipboard when required.")
+                        .accessibilityHint("May briefly use the clipboard when required.")
 
-                    Spacer(minLength: 8)
+                        Button(
+                            icon: Image(systemName: isNotchRecording ? "mic.fill" : "mic"),
+                            label: isNotchRecording ? "Stop" : "Dictate",
+                            showsProgress: dictation.isNotchActive
+                                && dictation.state == .transcribing,
+                            isSelected: isNotchRecording,
+                            action: onToggleDictation
+                        )
+                        .disabled(
+                            voiceMode.isActive
+                                || session.isGenerating
+                                || dictation.state == .transcribing
+                                || dictation.isChatActive
+                        )
 
-                    Button(
-                        label: "Ask",
-                        shortcut: "↵",
-                        appearance: .filled
-                    ) {
-                        submit(insertMode: false)
-                    }
-                    .disabled(!canSubmit)
+                        Spacer(minLength: 8)
 
-                    Button(
-                        label: session.isGenerating ? "Inserting" : "Insert",
-                        shortcut: session.isGenerating ? nil : "⌘ ↵",
-                        showsProgress: session.isGenerating,
-                        appearance: .filled
-                    ) {
-                        submit(insertMode: true)
-                    }
-                    .disabled(!canSubmit && !session.isGenerating)
-                    .allowsHitTesting(!session.isGenerating)
-                    .accessibilityLabel(session.isGenerating ? "Generating" : "Insert")
+                        Button(
+                            label: "Ask",
+                            shortcut: "↵",
+                            appearance: .filled
+                        ) {
+                            submit(insertMode: false)
+                        }
+                        .disabled(!canSubmit)
+
+                        Button(
+                            label: session.isGenerating ? "Inserting" : "Insert",
+                            shortcut: session.isGenerating ? nil : "⌘ ↵",
+                            showsProgress: session.isGenerating,
+                            appearance: .filled
+                        ) {
+                            submit(insertMode: true)
+                        }
+                        .disabled(!canSubmit && !session.isGenerating)
+                        .allowsHitTesting(!session.isGenerating)
+                        .accessibilityLabel(session.isGenerating ? "Generating" : "Insert")
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
@@ -304,6 +353,25 @@ struct NotchView: View {
                     .allowsHitTesting(false)
             }
             .animation(.easeOut(duration: 0.1), value: promptIsFocused)
+            .overlay(alignment: .topTrailing) {
+                if isAttachmentDropTargeted {
+                    Label("Drop to attach", systemImage: "paperclip")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(10)
+                        .allowsHitTesting(false)
+                }
+            }
+            .fileImporter(
+                isPresented: $isFileImporterPresented,
+                allowedContentTypes: [.image, .pdf, .text],
+                allowsMultipleSelection: true
+            ) { result in
+                guard case .success(let urls) = result else { return }
+                Task { await draftAttachments.add(urls: urls) }
+            }
 
             HStack(spacing: 10) {
                 Button(
@@ -342,16 +410,22 @@ struct NotchView: View {
         !session.isGenerating
             && !voiceMode.isActive
             && !dictation.isNotchActive
-            && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !draftAttachments.attachments.isEmpty)
     }
 
     private func submit(insertMode: Bool) {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty, canSubmit else { return }
+        guard canSubmit else { return }
+        let attachments = draftAttachments.attachments
+        let submittedPrompt = trimmedPrompt.isEmpty && !attachments.isEmpty
+            ? "Please analyze the attached \(attachments.count == 1 ? "file" : "files")."
+            : trimmedPrompt
         if !insertMode {
             prompt = ""
+            draftAttachments.removeAll()
         }
-        onSubmitPrompt(trimmedPrompt, insertMode)
+        onSubmitPrompt(submittedPrompt, insertMode, attachments)
     }
 
     private func showSettings() {

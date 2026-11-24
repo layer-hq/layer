@@ -10,17 +10,20 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     let role: ChatRole
     var content: String
     let screenAttachment: ScreenAttachment?
+    let attachments: [ChatAttachment]
 
     init(
         id: UUID = UUID(),
         role: ChatRole,
         content: String,
-        screenAttachment: ScreenAttachment? = nil
+        screenAttachment: ScreenAttachment? = nil,
+        attachments: [ChatAttachment] = []
     ) {
         self.id = id
         self.role = role
         self.content = content
         self.screenAttachment = screenAttachment
+        self.attachments = attachments
     }
 }
 
@@ -44,6 +47,7 @@ struct ChatResponseRequest: Sendable {
     var structuredOutput = false
     let continuationID: String?
     let screenAttachment: ScreenAttachment?
+    var attachments: [ChatAttachment] = []
     var selectedContent: String? = nil
 }
 
@@ -51,15 +55,18 @@ struct ModelConversationMessage: Equatable, Sendable {
     let role: ChatRole
     let content: String
     let screenAttachment: ScreenAttachment?
+    let attachments: [ChatAttachment]
 
     init(
         role: ChatRole,
         content: String,
-        screenAttachment: ScreenAttachment? = nil
+        screenAttachment: ScreenAttachment? = nil,
+        attachments: [ChatAttachment] = []
     ) {
         self.role = role
         self.content = content
         self.screenAttachment = screenAttachment
+        self.attachments = attachments
     }
 }
 
@@ -104,15 +111,25 @@ final class ChatConversation: ObservableObject {
             && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    func submitDraft() {
-        let prompt = draft
+    func canSubmitDraft(with attachments: [ChatAttachment]) -> Bool {
+        !isResponding
+            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !attachments.isEmpty)
+    }
+
+    func submitDraft(attachments: [ChatAttachment] = []) {
+        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = trimmedDraft.isEmpty && !attachments.isEmpty
+            ? "Please analyze the attached \(attachments.count == 1 ? "file" : "files")."
+            : draft
         draft = ""
-        submit(prompt)
+        submit(prompt, attachments: attachments)
     }
 
     func submit(
         _ rawPrompt: String,
-        modelContext: InvocationModelContext = .empty
+        modelContext: InvocationModelContext = .empty,
+        attachments: [ChatAttachment] = []
     ) {
         let prompt = rawPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isResponding else { return }
@@ -134,7 +151,8 @@ final class ChatConversation: ObservableObject {
                 prompt: prompt,
                 selectedContent: modelContext.selectedContent
             ),
-            screenAttachment: modelContext.screen.attachment
+            screenAttachment: modelContext.screen.attachment,
+            attachments: attachments
         )
         let requestHistory = history
         history.append(modelUserMessage)
@@ -142,7 +160,8 @@ final class ChatConversation: ObservableObject {
             ChatMessage(
                 role: .user,
                 content: prompt,
-                screenAttachment: modelContext.screen.attachment
+                screenAttachment: modelContext.screen.attachment,
+                attachments: attachments
             )
         )
 
@@ -152,6 +171,7 @@ final class ChatConversation: ObservableObject {
             history: requestHistory,
             continuationID: continuationID,
             screenAttachment: modelContext.screen.attachment,
+            attachments: attachments,
             selectedContent: modelContext.selectedContent
         )
 

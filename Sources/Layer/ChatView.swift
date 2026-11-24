@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ChatTypography {
     static let messageFontSize: CGFloat = 14
@@ -40,6 +41,9 @@ struct ChatView: View {
     @State private var latestUserMessageTop: CGFloat?
     @State private var messagesBottom: CGFloat?
     @State private var isParkingNewMessage = false
+    @State private var isFileImporterPresented = false
+    @State private var isAttachmentDropTargeted = false
+    @StateObject private var draftAttachments = DraftAttachments()
 
     var body: some View {
         NotchMaterialView(cornerRadius: NotchMaterialFactory.cornerRadius) {
@@ -82,6 +86,7 @@ struct ChatView: View {
                 label: "New Chat"
             ) {
                 conversation.startNewConversation()
+                draftAttachments.removeAll()
             }
             .disabled(conversation.messages.isEmpty)
         }
@@ -241,6 +246,12 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let notice = draftAttachments.notice {
+                errorBanner(notice) {
+                    draftAttachments.notice = nil
+                }
+            }
+
             if let notice = dictation.notice, isThisChat {
                 errorBanner(notice) {
                     dictation.dismissNotice()
@@ -256,42 +267,64 @@ struct ChatView: View {
                 lineLimit: 1...5,
                 textInsets: EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18),
                 minTextHeight: 56,
+                topAccessory: draftAttachments.attachments.isEmpty ? nil : AnyView(
+                    AttachmentStrip(attachments: draftAttachments.attachments) {
+                        draftAttachments.remove($0)
+                    }
+                    .padding(.top, 12)
+                ),
+                onPasteAttachments: { draftAttachments.acceptPastedItems($0) },
+                onPasteText: { draftAttachments.acceptPastedText($0) },
                 isDisabled: isChatDictating,
                 onFocusChange: { composerIsFocused = $0 },
-                onSubmit: { _ in conversation.submitDraft() }
+                onSubmit: { _ in submitDraft() }
             ) {
                 HStack(spacing: 8) {
-                    if isChatDictating, let label = dictation.state.label {
-                        Text(label)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                        Button(
+                            icon: Image(systemName: "paperclip"),
+                            showsProgress: draftAttachments.isLoading
+                        ) {
+                            isFileImporterPresented = true
+                        }
+                        .disabled(isChatDictating || conversation.isResponding)
+                        .help("Attach up to 5 images, PDFs, or text files (10 MB each, 25 MB total)")
+                        .accessibilityLabel("Attach files")
 
-                    Spacer()
+                        if isChatDictating, let label = dictation.state.label {
+                            Text(label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
-                    Button(
-                        icon: Image(systemName: isChatRecording ? "mic.fill" : "mic"),
-                        label: isChatRecording ? "Stop" : "Dictate",
-                        showsProgress: isChatDictating
-                            && dictation.state == .transcribing,
-                        isSelected: isChatRecording
-                    ) {
-                        dictation.toggle(surface: .chat(dictationID))
-                    }
-                    .disabled(
-                        dictation.state == .transcribing
-                            || (dictation.isActive && !isThisChat)
-                    )
+                        Spacer()
 
-                    Button(
-                        label: "Send",
-                        shortcut: "↵",
-                        appearance: .filled
-                    ) {
-                        conversation.submitDraft()
-                    }
-                    .disabled(!conversation.canSubmitDraft || isChatDictating)
-                    .accessibilityLabel("Send message")
+                        Button(
+                            icon: Image(systemName: isChatRecording ? "mic.fill" : "mic"),
+                            label: isChatRecording ? "Stop" : "Dictate",
+                            showsProgress: isChatDictating
+                                && dictation.state == .transcribing,
+                            isSelected: isChatRecording
+                        ) {
+                            dictation.toggle(surface: .chat(dictationID))
+                        }
+                        .disabled(
+                            dictation.state == .transcribing
+                                || (dictation.isActive && !isThisChat)
+                        )
+
+                        Button(
+                            label: "Send",
+                            shortcut: "↵",
+                            appearance: .filled
+                        ) {
+                            submitDraft()
+                        }
+                        .disabled(
+                            !conversation.canSubmitDraft(
+                                with: draftAttachments.attachments
+                            ) || isChatDictating
+                        )
+                        .accessibilityLabel("Send message")
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
@@ -310,6 +343,27 @@ struct ChatView: View {
             }
             .animation(.easeOut(duration: 0.1), value: composerIsFocused)
             .animation(.easeOut(duration: 0.1), value: dictation.state)
+            .overlay(alignment: .topTrailing) {
+                if isAttachmentDropTargeted {
+                    Label("Drop to attach", systemImage: "paperclip")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(10)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onDrop(
+                of: [UTType.fileURL.identifier, UTType.image.identifier],
+                isTargeted: $isAttachmentDropTargeted,
+                perform: { providers in
+                    guard !isChatDictating, !conversation.isResponding else {
+                        return false
+                    }
+                    return draftAttachments.acceptDrop(providers)
+                }
+            )
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
@@ -317,6 +371,21 @@ struct ChatView: View {
             guard isThisChat else { return }
             conversation.draft = appendingDictation(transcript, to: conversation.draft)
         }
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.image, .pdf, .text],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            Task { await draftAttachments.add(urls: urls) }
+        }
+    }
+
+    private func submitDraft() {
+        guard conversation.canSubmitDraft(with: draftAttachments.attachments) else {
+            return
+        }
+        conversation.submitDraft(attachments: draftAttachments.takeAll())
     }
 
     private var latestUserMessageID: UUID? {
@@ -390,6 +459,10 @@ private struct ChatMessageRow: View, Equatable {
                     ScreenAttachmentPreview(imageData: attachment.imageData)
                 }
 
+                ForEach(message.attachments) { attachment in
+                    ChatAttachmentPreview(attachment: attachment)
+                }
+
                 if showSpinner {
                     ProgressView()
                         .controlSize(.small)
@@ -446,6 +519,42 @@ private struct ChatMessageRow: View, Equatable {
             guard !Task.isCancelled else { return }
             didCopy = false
             copyResetTask = nil
+        }
+    }
+}
+
+private struct ChatAttachmentPreview: View {
+    let attachment: ChatAttachment
+
+    var body: some View {
+        if attachment.kind == .image, let image = NSImage(data: attachment.data) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 420, maxHeight: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                }
+                .accessibilityLabel("Attached image: \(attachment.name)")
+        } else {
+            Label {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(attachment.name)
+                        .lineLimit(1)
+                    Text(attachment.byteCountLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 }

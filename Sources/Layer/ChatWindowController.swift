@@ -87,12 +87,17 @@ final class ChatWindowController: NSWindowController, NSWindowDelegate {
 
     func show(
         with prompt: String,
-        modelContext: InvocationModelContext
+        modelContext: InvocationModelContext,
+        attachments: [ChatAttachment] = []
     ) {
         NSApplication.shared.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        conversation.submit(prompt, modelContext: modelContext)
+        conversation.submit(
+            prompt,
+            modelContext: modelContext,
+            attachments: attachments
+        )
     }
 
     func windowWillClose(_ notification: Notification) {

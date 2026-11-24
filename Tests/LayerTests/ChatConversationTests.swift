@@ -219,6 +219,32 @@ struct ChatConversationTests {
     }
 
     @Test
+    func testAttachmentOnlyDraftUsesDefaultPromptAndCarriesFile() async {
+        let responses = ChatResponseAdapterStub(
+            batches: [.events([.textDelta("Summary"), .completed("done")])]
+        )
+        let conversation = ChatConversation(
+            providers: ModelProviderStub(value: testProvider),
+            responses: responses
+        )
+        let attachment = ChatAttachment(
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: Data("Details".utf8),
+            kind: .document,
+            extractedText: "Details"
+        )
+
+        #expect(conversation.canSubmitDraft(with: [attachment]))
+        conversation.submitDraft(attachments: [attachment])
+        await waitUntilSettled(conversation)
+
+        #expect(responses.requests.first?.prompt == "Please analyze the attached file.")
+        #expect(responses.requests.first?.attachments == [attachment])
+        #expect(conversation.messages.first?.attachments == [attachment])
+    }
+
+    @Test
     func testTransportFailureRemovesEmptyAssistantAndSurfacesNotice() async {
         let responses = ChatResponseAdapterStub(
             batches: [.failure(ChatResponseAdapterStub.Failure.failed)]

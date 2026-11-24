@@ -32,7 +32,7 @@ final class NotchPanel: OverlayPanel {
     private let voiceMode = VoiceModeController()
     let dictation = DictationController()
     private let onSelect: () -> Void
-    private let onSubmitPrompt: (String, Bool) -> Void
+    private let onSubmitPrompt: (String, Bool, [ChatAttachment]) -> Void
     private let onCancelGeneration: () -> Void
     private var generatingEscapeMonitor: Any?
 
@@ -41,7 +41,7 @@ final class NotchPanel: OverlayPanel {
         screenContextAcquisition: ScreenContextAcquisition,
         frontmostExternalApplication: @escaping () -> NSRunningApplication?,
         onSelect: @escaping () -> Void,
-        onSubmitPrompt: @escaping (String, Bool) -> Void,
+        onSubmitPrompt: @escaping (String, Bool, [ChatAttachment]) -> Void,
         onCancelGeneration: @escaping () -> Void
     ) {
         self.collector = collector
@@ -102,11 +102,18 @@ final class NotchPanel: OverlayPanel {
                 onHoverChange: { [weak self] hovering in
                     self?.handleHoverChange(hovering)
                 },
+                onAttachmentAdded: { [weak self] in
+                    self?.presentExpanded()
+                },
                 onSelect: { [weak self] in
                     self?.startSelection()
                 },
-                onSubmitPrompt: { [weak self] prompt, insertMode in
-                    self?.submitPrompt(prompt, insertMode: insertMode)
+                onSubmitPrompt: { [weak self] prompt, insertMode, attachments in
+                    self?.submitPrompt(
+                        prompt,
+                        insertMode: insertMode,
+                        attachments: attachments
+                    )
                 },
                 // onToggleVoice: { [weak self] in
                 //     self?.toggleVoice()
@@ -260,7 +267,11 @@ final class NotchPanel: OverlayPanel {
         }
     }
 
-    private func submitPrompt(_ prompt: String, insertMode: Bool) {
+    private func submitPrompt(
+        _ prompt: String,
+        insertMode: Bool,
+        attachments: [ChatAttachment]
+    ) {
         if insertMode {
             session.notice = nil
             setGenerating(true)
@@ -270,7 +281,7 @@ final class NotchPanel: OverlayPanel {
         } else {
             setExpanded(false)
         }
-        onSubmitPrompt(prompt, insertMode)
+        onSubmitPrompt(prompt, insertMode, attachments)
     }
 
     private func startSelection() {

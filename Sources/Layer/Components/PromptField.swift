@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PromptField<Accessory: View>: View {
     @Binding var text: String
@@ -13,6 +14,9 @@ struct PromptField<Accessory: View>: View {
     var lineLimit: ClosedRange<Int> = 1...5
     var textInsets = EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12)
     var minTextHeight: CGFloat = 0
+    var topAccessory: AnyView?
+    var onPasteAttachments: (([NSItemProvider]) -> Void)?
+    var onPasteText: ((String) -> Bool)?
     var isDisabled = false
     var onFocusChange: ((Bool) -> Void)?
     let onSubmit: (String) -> Void
@@ -22,12 +26,16 @@ struct PromptField<Accessory: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let topAccessory {
+                topAccessory
+            }
+
             TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .controlSize(.large)
                 .lineLimit(lineLimit)
                 .disabled(isDisabled)
-                .padding(textInsets)
+                .padding(resolvedTextInsets)
                 .frame(maxWidth: .infinity, minHeight: minTextHeight, alignment: .topLeading)
                 .focused($isFocused)
                 .onAppear {
@@ -44,6 +52,12 @@ struct PromptField<Accessory: View>: View {
                 }
                 .onKeyPress(.return, phases: .down) { keyPress in
                     handleReturn(keyPress)
+                }
+                .onKeyPress("v", phases: .down) { keyPress in
+                    handlePaste(keyPress)
+                }
+                .onPasteCommand(of: [.fileURL, .image]) { providers in
+                    onPasteAttachments?(providers)
                 }
                 .accessibilityLabel(placeholder)
 
@@ -72,6 +86,15 @@ struct PromptField<Accessory: View>: View {
         )
     }
 
+    private var resolvedTextInsets: EdgeInsets {
+        EdgeInsets(
+            top: topAccessory == nil ? textInsets.top : 10,
+            leading: textInsets.leading,
+            bottom: textInsets.bottom,
+            trailing: textInsets.trailing
+        )
+    }
+
     private func handleReturn(_ keyPress: KeyPress) -> KeyPress.Result {
         if keyPress.modifiers.contains(.command) {
             guard let onCommandReturn else { return .ignored }
@@ -84,6 +107,30 @@ struct PromptField<Accessory: View>: View {
         }
 
         onSubmit(text)
+        return .handled
+    }
+
+    private func handlePaste(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard keyPress.modifiers.contains(.command),
+              !keyPress.modifiers.contains(.shift),
+              !keyPress.modifiers.contains(.option),
+              !keyPress.modifiers.contains(.control) else {
+            return .ignored
+        }
+
+        let pasteboard = NSPasteboard.general
+        let attachmentProviders = PasteboardAttachmentReader.itemProviders(from: pasteboard)
+        if !attachmentProviders.isEmpty,
+           let onPasteAttachments {
+            onPasteAttachments(attachmentProviders)
+            return .handled
+        }
+
+        guard let onPasteText,
+              let pastedText = pasteboard.string(forType: .string),
+              onPasteText(pastedText) else {
+            return .ignored
+        }
         return .handled
     }
 
@@ -128,6 +175,9 @@ extension PromptField where Accessory == EmptyView {
             lineLimit: lineLimit,
             textInsets: textInsets,
             minTextHeight: minTextHeight,
+            topAccessory: nil,
+            onPasteAttachments: nil,
+            onPasteText: nil,
             isDisabled: isDisabled,
             onFocusChange: onFocusChange,
             onSubmit: onSubmit,

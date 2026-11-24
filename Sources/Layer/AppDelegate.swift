@@ -171,11 +171,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSelect: { [weak self] in
                 self?.beginSelection()
             },
-            onSubmitPrompt: { [weak self] prompt, insertMode in
+            onSubmitPrompt: { [weak self] prompt, insertMode, attachments in
                 if insertMode {
-                    self?.insertAtCursor(with: prompt)
+                    self?.insertAtCursor(with: prompt, attachments: attachments)
                 } else {
-                    self?.showChat(with: prompt)
+                    self?.showChat(with: prompt, attachments: attachments)
                 }
             },
             onCancelGeneration: { [weak self] in
@@ -235,7 +235,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showChat(with prompt: String) {
+    private func showChat(
+        with prompt: String,
+        attachments: [ChatAttachment] = []
+    ) {
         guard StoredModelProviderAdapter().loadActiveProvider() != nil else {
             notchPanel?.invoke(
                 notice: Notice(
@@ -249,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { [weak self] in
             guard let self else { return }
             let inputs = await snapshotInputs()
-            presentChat(with: prompt, inputs: inputs)
+            presentChat(with: prompt, inputs: inputs, attachments: attachments)
         }
     }
 
@@ -260,7 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func insertAtCursor(with prompt: String) {
+    private func insertAtCursor(
+        with prompt: String,
+        attachments: [ChatAttachment] = []
+    ) {
         guard AXIsProcessTrusted() else {
             notchPanel?.invoke(
                 notice: Notice(
@@ -322,7 +328,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let request = insertChatRequest(
                 instruction: prompt,
                 inputs: inputs,
-                provider: provider
+                provider: provider,
+                attachments: attachments
             )
 
             do {
@@ -374,7 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentChat(
         with prompt: String,
-        inputs: InvocationInputs
+        inputs: InvocationInputs,
+        attachments: [ChatAttachment] = []
     ) {
         let applicationToRestore = inputs.interactionTarget.application
 
@@ -400,7 +408,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatWindowControllers.append(controller)
         controller.show(
             with: prompt,
-            modelContext: inputs.modelContext
+            modelContext: inputs.modelContext,
+            attachments: attachments
         )
     }
 
@@ -436,7 +445,8 @@ func insertionPrompt(instruction: String, selectedText: String?) -> String {
 func insertChatRequest(
     instruction: String,
     inputs: InvocationInputs,
-    provider: ModelProviderConfiguration
+    provider: ModelProviderConfiguration,
+    attachments: [ChatAttachment] = []
 ) -> ChatResponseRequest {
     ChatResponseRequest(
         prompt: insertionPrompt(
@@ -459,6 +469,7 @@ func insertChatRequest(
             """,
         structuredOutput: true,
         continuationID: nil,
-        screenAttachment: inputs.modelContext.screen.attachment
+        screenAttachment: inputs.modelContext.screen.attachment,
+        attachments: attachments
     )
 }

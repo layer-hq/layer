@@ -152,6 +152,87 @@ struct ModelProviderTests {
     }
 
     @Test
+    func openAIResponsesBodyIncludesImageAndFileAttachments() throws {
+        let image = ChatAttachment(
+            name: "diagram.png",
+            mediaType: "image/png",
+            data: Data([1, 2]),
+            kind: .image
+        )
+        let document = ChatAttachment(
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: Data("Context".utf8),
+            kind: .document,
+            extractedText: "Context"
+        )
+        let request = ChatResponseRequest(
+            prompt: "Review these",
+            provider: ModelProviderConfiguration(
+                kind: .openAI,
+                apiKey: "key",
+                model: "configured-model"
+            ),
+            continuationID: nil,
+            screenAttachment: nil,
+            attachments: [image, document]
+        )
+
+        let body = OpenAIClient.requestBody(for: request)
+        let input = try #require(body["input"] as? [[String: Any]])
+        let content = try #require(input.first?["content"] as? [[String: Any]])
+
+        #expect(content.map { $0["type"] as? String } == [
+            "input_text", "input_image", "input_file"
+        ])
+        #expect(content[1]["image_url"] as? String == image.dataURL)
+        #expect(content[2]["filename"] as? String == "notes.txt")
+        #expect(content[2]["file_data"] as? String == document.dataURL)
+    }
+
+    @Test
+    func liteLLMBodyIncludesAttachedFileAndImage() throws {
+        let image = ChatAttachment(
+            name: "diagram.png",
+            mediaType: "image/png",
+            data: Data([1, 2]),
+            kind: .image
+        )
+        let document = ChatAttachment(
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: Data("Important context".utf8),
+            kind: .document,
+            extractedText: "Important context"
+        )
+        let request = ChatResponseRequest(
+            prompt: "Review these",
+            provider: ModelProviderConfiguration(
+                kind: .liteLLM,
+                baseURL: "https://models.example.com",
+                apiKey: "key",
+                model: "model"
+            ),
+            continuationID: nil,
+            screenAttachment: nil,
+            attachments: [image, document]
+        )
+
+        let body = LiteLLMClient.requestBody(for: request)
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        let content = try #require(messages.last?["content"] as? [[String: Any]])
+
+        #expect(content.first?["text"] as? String == "Review these")
+        let imagePart = try #require(content.first { $0["type"] as? String == "image_url" })
+        let imagePayload = try #require(imagePart["image_url"] as? [String: Any])
+        #expect(imagePayload["url"] as? String == image.dataURL)
+        let filePart = try #require(content.first { $0["type"] as? String == "file" })
+        let filePayload = try #require(filePart["file"] as? [String: Any])
+        #expect(filePayload["filename"] as? String == "notes.txt")
+        #expect(filePayload["file_data"] as? String == document.dataURL)
+    }
+
+    @Test
     func parsesLiteLLMStreamingDeltasCompletionAndErrors() throws {
         let parsedDelta = try LiteLLMClient.streamChunk(
             from: #"{"id":"chat-1","choices":[{"delta":{"content":"Hi"},"finish_reason":null}]}"#

@@ -192,27 +192,69 @@ enum ModelContextPayload {
     nonisolated static func chatInput(
         prompt: String,
         selectedContent: String?,
-        screenAttachment: ScreenAttachment?
+        screenAttachment: ScreenAttachment?,
+        attachments: [ChatAttachment] = []
     ) -> Any {
         let text = chatUserText(prompt: prompt, selectedContent: selectedContent)
-        guard let screenAttachment else { return text }
+        guard screenAttachment != nil || !attachments.isEmpty else { return text }
+
+        var content: [[String: Any]] = [
+            [
+                "type": "input_text",
+                "text": text
+            ]
+        ]
+        if let screenAttachment {
+            content.append([
+                "type": "input_image",
+                "image_url": screenAttachment.dataURL,
+                "detail": "auto"
+            ])
+        }
+        for attachment in attachments {
+            switch attachment.kind {
+            case .image:
+                content.append([
+                    "type": "input_image",
+                    "image_url": attachment.dataURL,
+                    "detail": "auto"
+                ])
+            case .document:
+                content.append([
+                    "type": "input_file",
+                    "filename": attachment.name,
+                    "file_data": attachment.dataURL
+                ])
+            }
+        }
 
         return [
             [
                 "role": "user",
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": text
-                    ],
-                    [
-                        "type": "input_image",
-                        "image_url": screenAttachment.dataURL,
-                        "detail": "auto"
-                    ]
-                ]
+                "content": content
             ]
         ]
+    }
+
+    nonisolated static func fileContext(
+        from attachments: [ChatAttachment]
+    ) -> String? {
+        let blocks = attachments.compactMap { attachment -> String? in
+            guard attachment.kind == .document,
+                  let text = attachment.extractedText,
+                  !text.isEmpty else { return nil }
+            let safeName = attachment.name.replacingOccurrences(of: "\n", with: " ")
+            let truncation = attachment.textWasTruncated
+                ? "\n[Content truncated after \(ChatAttachmentLimits.maximumExtractedCharacters) characters.]"
+                : ""
+            return """
+                --- BEGIN ATTACHED FILE: \(safeName) ---
+                \(text)\(truncation)
+                --- END ATTACHED FILE: \(safeName) ---
+                """
+        }
+        guard !blocks.isEmpty else { return nil }
+        return "Context from the user's attached files:\n" + blocks.joined(separator: "\n\n")
     }
 
     nonisolated static func voiceConversationItem(
