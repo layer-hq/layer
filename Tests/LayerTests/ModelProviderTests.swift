@@ -131,6 +131,34 @@ struct ModelProviderTests {
     }
 
     @Test
+    func liteLLMBodyIncludesEveryScreenContextImage() throws {
+        let attachments = [
+            ScreenAttachment(imageData: Data([1])),
+            ScreenAttachment(imageData: Data([2]))
+        ]
+        let request = ChatResponseRequest(
+            prompt: "Compare",
+            provider: ModelProviderConfiguration(
+                kind: .liteLLM,
+                baseURL: "https://models.example.com",
+                apiKey: "key",
+                model: "model"
+            ),
+            continuationID: nil,
+            screenAttachments: attachments
+        )
+
+        let body = LiteLLMClient.requestBody(for: request)
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        let content = try #require(messages.last?["content"] as? [[String: Any]])
+        let images = content.compactMap { $0["image_url"] as? [String: Any] }
+
+        #expect(images.count == 2)
+        #expect(images[0]["url"] as? String == attachments[0].dataURL)
+        #expect(images[1]["url"] as? String == attachments[1].dataURL)
+    }
+
+    @Test
     func openAIResponsesBodyUsesTheConfiguredModel() {
         let provider = ModelProviderConfiguration(
             kind: .openAI,

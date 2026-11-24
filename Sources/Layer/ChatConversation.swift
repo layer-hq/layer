@@ -9,8 +9,10 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     let id: UUID
     let role: ChatRole
     var content: String
-    let screenAttachment: ScreenAttachment?
+    let screenAttachments: [ScreenAttachment]
     let attachments: [ChatAttachment]
+
+    var screenAttachment: ScreenAttachment? { screenAttachments.first }
 
     init(
         id: UUID = UUID(),
@@ -22,7 +24,21 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
         self.id = id
         self.role = role
         self.content = content
-        self.screenAttachment = screenAttachment
+        screenAttachments = screenAttachment.map { [$0] } ?? []
+        self.attachments = attachments
+    }
+
+    init(
+        id: UUID = UUID(),
+        role: ChatRole,
+        content: String,
+        screenAttachments: [ScreenAttachment],
+        attachments: [ChatAttachment] = []
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.screenAttachments = screenAttachments
         self.attachments = attachments
     }
 }
@@ -46,16 +62,64 @@ struct ChatResponseRequest: Sendable {
     var instructions: String? = nil
     var structuredOutput = false
     let continuationID: String?
-    let screenAttachment: ScreenAttachment?
+    let screenAttachments: [ScreenAttachment]
     var attachments: [ChatAttachment] = []
     var selectedContent: String? = nil
+
+    var screenAttachment: ScreenAttachment? { screenAttachments.first }
+
+    init(
+        prompt: String,
+        provider: ModelProviderConfiguration,
+        history: [ModelConversationMessage] = [],
+        instructions: String? = nil,
+        structuredOutput: Bool = false,
+        continuationID: String?,
+        screenAttachment: ScreenAttachment?,
+        attachments: [ChatAttachment] = [],
+        selectedContent: String? = nil
+    ) {
+        self.prompt = prompt
+        self.provider = provider
+        self.history = history
+        self.instructions = instructions
+        self.structuredOutput = structuredOutput
+        self.continuationID = continuationID
+        screenAttachments = screenAttachment.map { [$0] } ?? []
+        self.attachments = attachments
+        self.selectedContent = selectedContent
+    }
+
+    init(
+        prompt: String,
+        provider: ModelProviderConfiguration,
+        history: [ModelConversationMessage] = [],
+        instructions: String? = nil,
+        structuredOutput: Bool = false,
+        continuationID: String?,
+        screenAttachments: [ScreenAttachment],
+        attachments: [ChatAttachment] = [],
+        selectedContent: String? = nil
+    ) {
+        self.prompt = prompt
+        self.provider = provider
+        self.history = history
+        self.instructions = instructions
+        self.structuredOutput = structuredOutput
+        self.continuationID = continuationID
+        self.screenAttachments = screenAttachments
+        self.attachments = attachments
+        self.selectedContent = selectedContent
+    }
 }
 
 struct ModelConversationMessage: Equatable, Sendable {
     let role: ChatRole
     let content: String
-    let screenAttachment: ScreenAttachment?
+    let screenAttachments: [ScreenAttachment]
     let attachments: [ChatAttachment]
+
+    var screenAttachment: ScreenAttachment? { screenAttachments.first }
 
     init(
         role: ChatRole,
@@ -65,7 +129,19 @@ struct ModelConversationMessage: Equatable, Sendable {
     ) {
         self.role = role
         self.content = content
-        self.screenAttachment = screenAttachment
+        screenAttachments = screenAttachment.map { [$0] } ?? []
+        self.attachments = attachments
+    }
+
+    init(
+        role: ChatRole,
+        content: String,
+        screenAttachments: [ScreenAttachment],
+        attachments: [ChatAttachment] = []
+    ) {
+        self.role = role
+        self.content = content
+        self.screenAttachments = screenAttachments
         self.attachments = attachments
     }
 }
@@ -151,7 +227,7 @@ final class ChatConversation: ObservableObject {
                 prompt: prompt,
                 selectedContent: modelContext.selectedContent
             ),
-            screenAttachment: modelContext.screen.attachment,
+            screenAttachments: modelContext.screen.attachments,
             attachments: attachments
         )
         let requestHistory = history
@@ -160,7 +236,7 @@ final class ChatConversation: ObservableObject {
             ChatMessage(
                 role: .user,
                 content: prompt,
-                screenAttachment: modelContext.screen.attachment,
+                screenAttachments: modelContext.screen.attachments,
                 attachments: attachments
             )
         )
@@ -170,7 +246,7 @@ final class ChatConversation: ObservableObject {
             provider: provider,
             history: requestHistory,
             continuationID: continuationID,
-            screenAttachment: modelContext.screen.attachment,
+            screenAttachments: modelContext.screen.attachments,
             attachments: attachments,
             selectedContent: modelContext.selectedContent
         )

@@ -101,7 +101,7 @@ struct LiteLLMClient: ChatResponseStreaming {
                         prompt: request.prompt,
                         selectedContent: request.selectedContent
                     ),
-                    screenAttachment: request.screenAttachment,
+                    screenAttachments: request.screenAttachments,
                     attachments: request.attachments
                 )
             )
@@ -145,21 +145,21 @@ struct LiteLLMClient: ChatResponseStreaming {
         let role = message.role == .user ? "user" : "assistant"
         let imageAttachments = message.attachments.filter { $0.kind == .image }
         let documentAttachments = message.attachments.filter { $0.kind == .document }
-        guard message.screenAttachment != nil
+        guard !message.screenAttachments.isEmpty
                 || !imageAttachments.isEmpty
                 || !documentAttachments.isEmpty else {
             return ["role": role, "content": message.content]
         }
         var content: [[String: Any]] = [["type": "text", "text": message.content]]
-        if let attachment = message.screenAttachment {
-            content.append([
+        content.append(contentsOf: message.screenAttachments.map { attachment in
+            [
                 "type": "image_url",
                 "image_url": [
                     "url": attachment.dataURL,
                     "detail": "auto"
                 ]
-            ])
-        }
+            ]
+        })
         content.append(contentsOf: imageAttachments.map { attachment in
             [
                 "type": "image_url",

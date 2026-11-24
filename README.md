@@ -6,19 +6,21 @@ Layer is a native macOS assistant that lives beneath the MacBook notch. Hover
 over the Notch or press the configured modifier key twice, enter a prompt, and
 receive a streamed response from the selected model provider. OpenAI models may
 search the web when a Turn needs current information. A Turn can include
-selected content from the frontmost app and the active display or a manually
-selected region as visual context. The prompt also supports release-to-transcribe
+selected content from the frontmost app, images of selected app windows or the
+entire active display, and a manually selected region as visual context. The prompt also supports release-to-transcribe
 Dictation: hold Fn, or the configured fallback shortcut, then release.
 
 > **Input context disclosure:** When **Include selected content** is enabled,
 > opening the Notch reads the focused field's selected text (via Accessibility,
 > or briefly via the clipboard if Accessibility cannot see it) and may send that
-> text to the selected model provider with Chat, Voice, or Insert. When **Take
-> screen context** is enabled, starting Chat, Voice, or Insert captures the target
-> display, excluding Layer's own windows, and sends the image to the selected
+> text to the selected model provider with Chat, Voice, or Insert. Screen context
+> chips below the prompt list visible application windows and **Entire screen**.
+> Starting Chat, Voice, or Insert captures every selected window and/or the active
+> display, excluding Layer's own windows, and sends those images to the selected
 > model provider. Submitting **Select** to Chat sends only the selected region.
 > **Copy img** on Select writes that region to the clipboard and does not send it
-> to a provider. Both options are off by default.
+> to a provider. Selected content and Entire screen are off by default;
+> application-window chips apply only to the current Notch opening.
 
 ## Privacy and permissions
 
@@ -51,9 +53,9 @@ Dictation: hold Fn, or the configured fallback shortcut, then release.
   OpenAI for transcription after recording stops, then deletes it. Cancelling
   Dictation deletes the temporary recording and aborts any transcription in
   progress.
-- **Screen Recording:** Required only to capture the active display or a
-  selected region for Chat, Voice, Insert, or Select. macOS controls access in
-  Privacy & Security settings.
+- **Screen Recording:** Required only to capture selected application windows,
+  the active display, or a selected region for Chat, Voice, Insert, or Select.
+  macOS controls access in Privacy & Security settings.
 - **Input Monitoring:** Used for the global double-modifier shortcut so Layer
   can open while another app is active, and for hold-Fn Dictation. The global
   monitor receives modifier-key changes and key-down events. Modifier changes

@@ -640,10 +640,16 @@ enum VoiceRealtimeOpening {
         from modelContext: InvocationModelContext?
     ) -> [[String: Any]] {
         guard let modelContext else { return [] }
-        let attachment = modelContext.screen.attachment?.constrainedForRealtime()
+        let attachmentCount = modelContext.screen.attachments.count
+        let maximumBytesPerImage = attachmentCount > 0
+            ? max(1_000, 40_000 / attachmentCount)
+            : 40_000
+        let attachments = modelContext.screen.attachments.map {
+            $0.constrainedForRealtime(maxEncodedBytes: maximumBytesPerImage)
+        }
         guard var item = ModelContextPayload.voiceConversationItem(
             selectedContent: modelContext.selectedContent,
-            screenAttachment: attachment
+            screenAttachments: attachments
         ) else {
             return []
         }

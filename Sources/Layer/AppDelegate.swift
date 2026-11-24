@@ -171,11 +171,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSelect: { [weak self] in
                 self?.beginSelection()
             },
-            onSubmitPrompt: { [weak self] prompt, insertMode, attachments in
+            onSubmitPrompt: { [weak self] prompt, insertMode, attachments, targets in
                 if insertMode {
-                    self?.insertAtCursor(with: prompt, attachments: attachments)
+                    self?.insertAtCursor(
+                        with: prompt,
+                        attachments: attachments,
+                        screenContextTargets: targets
+                    )
                 } else {
-                    self?.showChat(with: prompt, attachments: attachments)
+                    self?.showChat(
+                        with: prompt,
+                        attachments: attachments,
+                        screenContextTargets: targets
+                    )
                 }
             },
             onCancelGeneration: { [weak self] in
@@ -237,7 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showChat(
         with prompt: String,
-        attachments: [ChatAttachment] = []
+        attachments: [ChatAttachment] = [],
+        screenContextTargets: [ScreenContextTarget] = []
     ) {
         guard StoredModelProviderAdapter().loadActiveProvider() != nil else {
             notchPanel?.invoke(
@@ -251,21 +260,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { [weak self] in
             guard let self else { return }
-            let inputs = await snapshotInputs()
+            let inputs = await snapshotInputs(screenContextTargets: screenContextTargets)
             presentChat(with: prompt, inputs: inputs, attachments: attachments)
         }
     }
 
-    private func snapshotInputs() async -> InvocationInputs {
+    private func snapshotInputs(
+        screenContextTargets: [ScreenContextTarget]
+    ) async -> InvocationInputs {
         await inputsCollector.takeCurrent(
-            capturingScreen: UserDefaults.standard.bool(forKey: "takeScreenContext"),
+            capturing: screenContextTargets,
             using: screenContextAcquisition
         )
     }
 
     private func insertAtCursor(
         with prompt: String,
-        attachments: [ChatAttachment] = []
+        attachments: [ChatAttachment] = [],
+        screenContextTargets: [ScreenContextTarget] = []
     ) {
         guard AXIsProcessTrusted() else {
             notchPanel?.invoke(
@@ -311,7 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     insertionTask = nil
                 }
             }
-            let inputs = await snapshotInputs()
+            let inputs = await snapshotInputs(screenContextTargets: screenContextTargets)
             insertionInputs = inputs
             if Task.isCancelled {
                 revertInsertion(inputs, generation: generation)
@@ -469,7 +481,7 @@ func insertChatRequest(
             """,
         structuredOutput: true,
         continuationID: nil,
-        screenAttachment: inputs.modelContext.screen.attachment,
+        screenAttachments: inputs.modelContext.screen.attachments,
         attachments: attachments
     )
 }

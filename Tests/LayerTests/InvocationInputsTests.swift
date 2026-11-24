@@ -356,6 +356,25 @@ struct ModelContextEncodingTests {
     }
 
     @Test
+    func chatInputEncodesEveryAttachedScreenContextImage() throws {
+        let attachments = [
+            ScreenAttachment(imageData: Data([1, 2, 3])),
+            ScreenAttachment(imageData: Data([4, 5, 6]))
+        ]
+        let input = ModelContextPayload.chatInput(
+            prompt: "Compare these",
+            selectedContent: nil,
+            screenAttachments: attachments
+        )
+        let turns = try #require(input as? [[String: Any]])
+        let content = try #require(turns.first?["content"] as? [[String: Any]])
+
+        #expect(content.filter { $0["type"] as? String == "input_image" }.count == 2)
+        #expect(content[1]["image_url"] as? String == attachments[0].dataURL)
+        #expect(content[2]["image_url"] as? String == attachments[1].dataURL)
+    }
+
+    @Test
     func voiceOpeningSendsContextItemWithoutGreeting() throws {
         let attachment = ScreenAttachment(imageData: Data([7, 8]))
         let events = VoiceRealtimeOpening.contextEvents(
@@ -383,5 +402,23 @@ struct ModelContextEncodingTests {
         #expect(
             content.contains { $0["image_url"] as? String == attachment.dataURL }
         )
+    }
+
+    @Test
+    func voiceOpeningIncludesEveryAttachedScreenContextImage() throws {
+        let attachments = [
+            ScreenAttachment(imageData: Data([7, 8])),
+            ScreenAttachment(imageData: Data([9, 10]))
+        ]
+        let events = VoiceRealtimeOpening.contextEvents(
+            from: InvocationModelContext(
+                selectedContent: nil,
+                screen: ScreenContextOutcome(attachments: attachments, notice: nil)
+            )
+        )
+        let item = try #require(events.first?["item"] as? [String: Any])
+        let content = try #require(item["content"] as? [[String: Any]])
+
+        #expect(content.filter { $0["type"] as? String == "input_image" }.count == 2)
     }
 }

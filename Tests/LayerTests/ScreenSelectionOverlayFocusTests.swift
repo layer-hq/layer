@@ -8,6 +8,14 @@ import UniformTypeIdentifiers
 @Suite(.serialized)
 @MainActor
 struct ScreenSelectionOverlayFocusTests {
+    @Test
+    func screenContextChipLayoutStaysCompactAndLeavesRoomForFocus() {
+        #expect(ScreenContextChipLayout.focusHaloClearance >= 4)
+        #expect(ScreenContextChipLayout.maximumLabelWidth <= 140)
+        #expect(ScreenContextChipLayout.hoverIconName(isAttached: false) == "plus")
+        #expect(ScreenContextChipLayout.hoverIconName(isAttached: true) == "xmark")
+    }
+
     @Test(.enabled(if: NSScreen.main != nil, "Requires a graphical session"))
     func commandVPastesClipboardImageAsAnAttachment() async throws {
         let pasteboard = NSPasteboard.general
@@ -148,9 +156,10 @@ struct ScreenSelectionOverlayFocusTests {
             expandedWidth: 720,
             promptFocusRequests: Empty<Void, Never>().eraseToAnyPublisher(),
             onHoverChange: { _ in },
+            onHoverScreenContextTarget: { _ in },
             onAttachmentAdded: { attachmentAddedCount += 1 },
             onSelect: {},
-            onSubmitPrompt: { _, _, _ in },
+            onSubmitPrompt: { _, _, _, _ in },
             onToggleDictation: {},
             onContentHeightChange: { _ in }
         )
@@ -253,9 +262,10 @@ struct ScreenSelectionOverlayFocusTests {
             expandedWidth: 720,
             promptFocusRequests: Empty<Void, Never>().eraseToAnyPublisher(),
             onHoverChange: { _ in },
+            onHoverScreenContextTarget: { _ in },
             onAttachmentAdded: {},
             onSelect: {},
-            onSubmitPrompt: { _, _, _ in },
+            onSubmitPrompt: { _, _, _, _ in },
             onToggleDictation: {},
             onContentHeightChange: { _ in }
         )

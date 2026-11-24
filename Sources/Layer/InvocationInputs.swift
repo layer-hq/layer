@@ -142,6 +142,27 @@ final class InvocationInputsCollector {
         return inputs
     }
 
+    func takeCurrent(
+        capturing targets: [ScreenContextTarget],
+        using acquisition: ScreenContextAcquisition
+    ) async -> InvocationInputs {
+        if let phase1Task {
+            await phase1Task.value
+        }
+        let displayID = self.displayID
+        let cached = targets.isEmpty ? nil : cachedScreen
+        var inputs = takeCurrent()
+        if let cached {
+            inputs.modelContext.screen = cached
+        } else {
+            inputs.modelContext.screen = await acquisition.acquire(
+                targets: targets,
+                displayID: displayID
+            )
+        }
+        return inputs
+    }
+
     func restore(_ inputs: InvocationInputs) {
         application = inputs.interactionTarget.application
         displayID = inputs.interactionTarget.displayID
@@ -195,8 +216,22 @@ enum ModelContextPayload {
         screenAttachment: ScreenAttachment?,
         attachments: [ChatAttachment] = []
     ) -> Any {
+        chatInput(
+            prompt: prompt,
+            selectedContent: selectedContent,
+            screenAttachments: screenAttachment.map { [$0] } ?? [],
+            attachments: attachments
+        )
+    }
+
+    nonisolated static func chatInput(
+        prompt: String,
+        selectedContent: String?,
+        screenAttachments: [ScreenAttachment],
+        attachments: [ChatAttachment] = []
+    ) -> Any {
         let text = chatUserText(prompt: prompt, selectedContent: selectedContent)
-        guard screenAttachment != nil || !attachments.isEmpty else { return text }
+        guard !screenAttachments.isEmpty || !attachments.isEmpty else { return text }
 
         var content: [[String: Any]] = [
             [
@@ -204,13 +239,13 @@ enum ModelContextPayload {
                 "text": text
             ]
         ]
-        if let screenAttachment {
-            content.append([
+        content.append(contentsOf: screenAttachments.map { screenAttachment in
+            [
                 "type": "input_image",
                 "image_url": screenAttachment.dataURL,
                 "detail": "auto"
-            ])
-        }
+            ]
+        })
         for attachment in attachments {
             switch attachment.kind {
             case .image:
@@ -261,6 +296,16 @@ enum ModelContextPayload {
         selectedContent: String?,
         screenAttachment: ScreenAttachment?
     ) -> [String: Any]? {
+        voiceConversationItem(
+            selectedContent: selectedContent,
+            screenAttachments: screenAttachment.map { [$0] } ?? []
+        )
+    }
+
+    nonisolated static func voiceConversationItem(
+        selectedContent: String?,
+        screenAttachments: [ScreenAttachment]
+    ) -> [String: Any]? {
         var content: [[String: Any]] = []
         if let selectedContent, !selectedContent.isEmpty {
             content.append([
@@ -268,18 +313,20 @@ enum ModelContextPayload {
                 "text": selectedContentBlock(selectedContent)
             ])
         }
-        if let screenAttachment {
+        if !screenAttachments.isEmpty {
             if content.isEmpty {
                 content.append([
                     "type": "input_text",
-                    "text": "The attached image is the user's current screen."
+                    "text": "The attached images are the user's selected Screen context."
                 ])
             }
-            content.append([
-                "type": "input_image",
-                "image_url": screenAttachment.dataURL,
-                "detail": "high"
-            ])
+            content.append(contentsOf: screenAttachments.map { screenAttachment in
+                [
+                    "type": "input_image",
+                    "image_url": screenAttachment.dataURL,
+                    "detail": "high"
+                ]
+            })
         }
         guard !content.isEmpty else { return nil }
 

@@ -8,6 +8,40 @@ final class NotchSession: ObservableObject {
     @Published var notice: Notice?
     @Published var isExpanded = false
     @Published var isGenerating = false
+    @Published var screenContextTargets: [ScreenContextTarget] = [.entireScreen]
+    @Published var selectedScreenContextTargetIDs: Set<String> = UserDefaults.standard.bool(
+        forKey: "takeScreenContext"
+    ) ? [ScreenContextTarget.entireScreen.id] : []
+
+    var selectedScreenContextTargets: [ScreenContextTarget] {
+        screenContextTargets.filter { selectedScreenContextTargetIDs.contains($0.id) }
+    }
+
+    func refreshScreenContextTargets() {
+        screenContextTargets = [.entireScreen] + ScreenContextTarget.visibleWindows()
+        let availableIDs = Set(screenContextTargets.map(\.id))
+        selectedScreenContextTargetIDs.formIntersection(availableIDs)
+    }
+
+    func toggleScreenContextTarget(_ target: ScreenContextTarget) {
+        if selectedScreenContextTargetIDs.contains(target.id) {
+            selectedScreenContextTargetIDs.remove(target.id)
+        } else {
+            selectedScreenContextTargetIDs.insert(target.id)
+        }
+        if target == .entireScreen {
+            UserDefaults.standard.set(
+                selectedScreenContextTargetIDs.contains(target.id),
+                forKey: "takeScreenContext"
+            )
+        }
+    }
+
+    func clearApplicationContextTargets() {
+        selectedScreenContextTargetIDs = selectedScreenContextTargetIDs.filter {
+            $0 == ScreenContextTarget.entireScreen.id
+        }
+    }
 }
 
 @MainActor
@@ -32,16 +66,27 @@ final class NotchPanel: OverlayPanel {
     private let voiceMode = VoiceModeController()
     let dictation = DictationController()
     private let onSelect: () -> Void
-    private let onSubmitPrompt: (String, Bool, [ChatAttachment]) -> Void
+    private let onSubmitPrompt: (
+        String,
+        Bool,
+        [ChatAttachment],
+        [ScreenContextTarget]
+    ) -> Void
     private let onCancelGeneration: () -> Void
     private var generatingEscapeMonitor: Any?
+    private let screenContextWindowHighlighter = ScreenContextWindowHighlighter()
 
     init(
         collector: InvocationInputsCollector,
         screenContextAcquisition: ScreenContextAcquisition,
         frontmostExternalApplication: @escaping () -> NSRunningApplication?,
         onSelect: @escaping () -> Void,
-        onSubmitPrompt: @escaping (String, Bool, [ChatAttachment]) -> Void,
+        onSubmitPrompt: @escaping (
+            String,
+            Bool,
+            [ChatAttachment],
+            [ScreenContextTarget]
+        ) -> Void,
         onCancelGeneration: @escaping () -> Void
     ) {
         self.collector = collector
@@ -72,6 +117,7 @@ final class NotchPanel: OverlayPanel {
                 voiceMode.stop()
             }
             collector.clear()
+            session.clearApplicationContextTargets()
             setExpanded(false)
             return true
         }
@@ -102,17 +148,21 @@ final class NotchPanel: OverlayPanel {
                 onHoverChange: { [weak self] hovering in
                     self?.handleHoverChange(hovering)
                 },
+                onHoverScreenContextTarget: { [weak self] target in
+                    self?.screenContextWindowHighlighter.show(target)
+                },
                 onAttachmentAdded: { [weak self] in
                     self?.presentExpanded()
                 },
                 onSelect: { [weak self] in
                     self?.startSelection()
                 },
-                onSubmitPrompt: { [weak self] prompt, insertMode, attachments in
+                onSubmitPrompt: { [weak self] prompt, insertMode, attachments, targets in
                     self?.submitPrompt(
                         prompt,
                         insertMode: insertMode,
-                        attachments: attachments
+                        attachments: attachments,
+                        contextTargets: targets
                     )
                 },
                 // onToggleVoice: { [weak self] in
@@ -174,13 +224,14 @@ final class NotchPanel: OverlayPanel {
                 return
             }
             let inputs = await collector.takeCurrent(
-                capturingScreen: UserDefaults.standard.bool(forKey: "takeScreenContext"),
+                capturing: session.selectedScreenContextTargets,
                 using: screenContextAcquisition
             )
             if let notice = inputs.modelContext.screen.notice {
                 session.notice = notice
             }
             voiceMode.start(inputs: inputs)
+            session.clearApplicationContextTargets()
         }
     }
 
@@ -270,7 +321,8 @@ final class NotchPanel: OverlayPanel {
     private func submitPrompt(
         _ prompt: String,
         insertMode: Bool,
-        attachments: [ChatAttachment]
+        attachments: [ChatAttachment],
+        contextTargets: [ScreenContextTarget]
     ) {
         if insertMode {
             session.notice = nil
@@ -281,11 +333,13 @@ final class NotchPanel: OverlayPanel {
         } else {
             setExpanded(false)
         }
-        onSubmitPrompt(prompt, insertMode, attachments)
+        onSubmitPrompt(prompt, insertMode, attachments, contextTargets)
+        session.clearApplicationContextTargets()
     }
 
     private func startSelection() {
         session.notice = nil
+        session.clearApplicationContextTargets()
         setExpanded(false)
         onSelect()
     }
@@ -304,6 +358,7 @@ final class NotchPanel: OverlayPanel {
                 self.scheduleCollapseCheck()
             } else {
                 self.collector.clear()
+                self.session.clearApplicationContextTargets()
                 self.setExpanded(false)
             }
         }
@@ -320,6 +375,7 @@ final class NotchPanel: OverlayPanel {
                 forKey: "includeSelectedContent"
             )
         )
+        session.refreshScreenContextTargets()
     }
 
     private func setExpanded(_ expanded: Bool) {
@@ -330,6 +386,7 @@ final class NotchPanel: OverlayPanel {
         session.isExpanded = expanded
 
         if !expanded {
+            screenContextWindowHighlighter.hide()
             pendingCollapse?.cancel()
             pendingCollapse = nil
         }
@@ -400,5 +457,61 @@ final class NotchPanel: OverlayPanel {
             width: size.width,
             height: size.height
         )
+    }
+}
+
+@MainActor
+private final class ScreenContextWindowHighlighter {
+    private static let borderOutset: CGFloat = 12
+    private var panel: OverlayPanel?
+
+    func show(_ target: ScreenContextTarget?) {
+        guard let target,
+              case .applicationWindow(_, let windowID) = target.kind,
+              let quartzFrame = Self.quartzFrame(for: windowID),
+              let primaryDisplayMaxY = NSScreen.screens.first?.frame.maxY else {
+            hide()
+            return
+        }
+
+        let frame = ScreenContextWindowGeometry.appKitFrame(
+            fromQuartzFrame: quartzFrame,
+            primaryDisplayMaxY: primaryDisplayMaxY
+        ).insetBy(dx: -Self.borderOutset, dy: -Self.borderOutset)
+        let panel = panel ?? makePanel()
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        self.panel = panel
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
+    private func makePanel() -> OverlayPanel {
+        let panel = OverlayPanel(contentRect: .zero, level: .floating)
+        panel.ignoresMouseEvents = true
+        panel.contentView = NSHostingView(
+            rootView: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.accentColor, lineWidth: 4)
+                .shadow(color: Color.accentColor.opacity(0.7), radius: 8)
+                .padding(Self.borderOutset)
+        )
+        return panel
+    }
+
+    private static func quartzFrame(for windowID: CGWindowID) -> CGRect? {
+        guard let window = (CGWindowListCopyWindowInfo(
+            [.optionIncludingWindow],
+            windowID
+        ) as? [[String: Any]])?.first,
+              let bounds = window[kCGWindowBounds as String] as? [String: NSNumber],
+              let x = bounds["X"]?.doubleValue,
+              let y = bounds["Y"]?.doubleValue,
+              let width = bounds["Width"]?.doubleValue,
+              let height = bounds["Height"]?.doubleValue else {
+            return nil
+        }
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }

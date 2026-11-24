@@ -47,6 +47,61 @@ struct ScreenContextAcquisitionTests {
     }
 
     @Test
+    func selectedTargetsCaptureEntireScreenAndMultipleWindowsInOrder() async {
+        let capture = MultipleScreenContextCaptureStub()
+        let acquisition = ScreenContextAcquisition(capture: capture)
+        let targets: [ScreenContextTarget] = [
+            .entireScreen,
+            .applicationWindow(processID: 21, windowID: 121, label: "Finder"),
+            .applicationWindow(processID: 34, windowID: 134, label: "Terminal")
+        ]
+
+        let outcome = await acquisition.acquire(targets: targets, displayID: 8)
+
+        #expect(outcome.attachments.map(\.imageData) == [Data([8]), Data([21]), Data([34])])
+        #expect(outcome.notice == nil)
+        #expect(capture.capturedDisplayIDs == [8])
+        #expect(capture.capturedWindows == [
+            CapturedWindow(processID: 21, windowID: 121),
+            CapturedWindow(processID: 34, windowID: 134)
+        ])
+    }
+
+    @Test
+    func duplicateApplicationWindowsReceiveCompactNumberedLabels() {
+        let targets = ScreenContextTarget.targets(from: [
+            ScreenContextWindowDescriptor(
+                processID: 42,
+                windowID: 101,
+                applicationName: "Terminal"
+            ),
+            ScreenContextWindowDescriptor(
+                processID: 42,
+                windowID: 102,
+                applicationName: "Terminal"
+            ),
+            ScreenContextWindowDescriptor(
+                processID: 84,
+                windowID: 201,
+                applicationName: "Finder"
+            )
+        ])
+
+        #expect(targets.map(\.label) == ["Terminal 1", "Terminal 2", "Finder"])
+        #expect(Set(targets.map(\.id)).count == 3)
+    }
+
+    @Test
+    func quartzWindowFramesConvertToAppKitCoordinates() {
+        let frame = ScreenContextWindowGeometry.appKitFrame(
+            fromQuartzFrame: CGRect(x: 20, y: 100, width: 600, height: 400),
+            primaryDisplayMaxY: 1_080
+        )
+
+        #expect(frame == CGRect(x: 20, y: 580, width: 600, height: 400))
+    }
+
+    @Test
     func testCaptureFailureBecomesRecoverableOutcome() async {
         let capture = ScreenContextCaptureStub(
             result: .failure(ScreenContextCaptureError.permissionDenied)
@@ -153,6 +208,30 @@ private final class ScreenContextCaptureStub: ScreenContextCapturing {
         capturedDisplayID = id
         return try result.get()
     }
+}
+
+@MainActor
+private final class MultipleScreenContextCaptureStub: ApplicationScreenContextCapturing {
+    private(set) var capturedDisplayIDs: [CGDirectDisplayID?] = []
+    private(set) var capturedWindows: [CapturedWindow] = []
+
+    func captureDisplay(id: CGDirectDisplayID?) async throws -> ScreenAttachment {
+        capturedDisplayIDs.append(id)
+        return ScreenAttachment(imageData: Data([UInt8(id ?? 0)]))
+    }
+
+    func captureWindow(
+        id windowID: CGWindowID,
+        processID: pid_t
+    ) async throws -> ScreenAttachment {
+        capturedWindows.append(CapturedWindow(processID: processID, windowID: windowID))
+        return ScreenAttachment(imageData: Data([UInt8(processID)]))
+    }
+}
+
+private struct CapturedWindow: Equatable {
+    let processID: pid_t
+    let windowID: CGWindowID
 }
 
 private func rgbContext(width: Int, height: Int) -> CGContext {

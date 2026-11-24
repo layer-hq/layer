@@ -44,6 +44,140 @@ enum NotchMaterialFactory {
     }
 }
 
+enum ScreenContextChipLayout {
+    static let focusHaloClearance: CGFloat = 6
+    static let maximumLabelWidth: CGFloat = 140
+
+    static func hoverIconName(isAttached: Bool) -> String {
+        isAttached ? "xmark" : "plus"
+    }
+}
+
+private struct ScreenContextChip: View {
+    let target: ScreenContextTarget
+    let isAttached: Bool
+    let action: () -> Void
+    let onHoverChange: (Bool) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        SwiftUI.Button(action: action) {
+            HStack(spacing: 7) {
+                ZStack {
+                    targetIcon
+                        .opacity(isHovering ? 0 : 1)
+
+                    Image(
+                        systemName: ScreenContextChipLayout.hoverIconName(
+                            isAttached: isAttached
+                        )
+                    )
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(isHovering ? 1 : 0)
+                }
+                .frame(width: 14, height: 14)
+
+                Text(target.label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(
+                        maxWidth: ScreenContextChipLayout.maximumLabelWidth,
+                        alignment: .leading
+                    )
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(backgroundColor, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isAttached ? Color.accentColor.opacity(0.5) : Color.clear,
+                        lineWidth: 1
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+            onHoverChange(hovering)
+        }
+        .arrowCursor()
+        .animation(.easeOut(duration: 0.1), value: isHovering)
+        .help(isAttached ? "Remove \(target.label) context" : "Attach \(target.label) context")
+        .accessibilityLabel(
+            isAttached ? "Remove \(target.label) context" : "Attach \(target.label) context"
+        )
+    }
+
+    private var backgroundColor: Color {
+        if isAttached {
+            return Color.accentColor.opacity(isHovering ? 0.32 : 0.2)
+        }
+        return Color.primary.opacity(isHovering ? 0.18 : 0.1)
+    }
+
+    @ViewBuilder
+    private var targetIcon: some View {
+        switch target.kind {
+        case .entireScreen:
+            Image(systemName: "display")
+                .font(.system(size: 12))
+        case .applicationWindow(let processID, _):
+            if let image = NSRunningApplication(processIdentifier: processID)?.icon {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "macwindow")
+                    .font(.system(size: 12))
+            }
+        }
+    }
+}
+
+private struct ScreenContextActionChip: View {
+    let iconName: String
+    let label: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        SwiftUI.Button(action: action) {
+            HStack(spacing: 7) {
+                ZStack {
+                    Image(systemName: iconName)
+                        .font(.system(size: 12))
+                        .opacity(isHovering ? 0 : 1)
+
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(isHovering ? 1 : 0)
+                }
+                .frame(width: 14, height: 14)
+
+                Text(label)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(
+                Color.primary.opacity(isHovering ? 0.18 : 0.1),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .arrowCursor()
+        .animation(.easeOut(duration: 0.1), value: isHovering)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
 func appendingDictation(_ transcript: String, to prompt: String) -> String {
     let transcript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !transcript.isEmpty else { return prompt }
@@ -103,9 +237,10 @@ struct NotchView: View {
     let expandedWidth: CGFloat
     let promptFocusRequests: AnyPublisher<Void, Never>
     let onHoverChange: (Bool) -> Void
+    let onHoverScreenContextTarget: (ScreenContextTarget?) -> Void
     let onAttachmentAdded: () -> Void
     let onSelect: () -> Void
-    let onSubmitPrompt: (String, Bool, [ChatAttachment]) -> Void
+    let onSubmitPrompt: (String, Bool, [ChatAttachment], [ScreenContextTarget]) -> Void
     // let onToggleVoice: () -> Void
     let onToggleDictation: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
@@ -115,7 +250,6 @@ struct NotchView: View {
     private var storedProviderConfigurations = ""
     @AppStorage(ModelProviderPreferences.selectedConfigurationIDKey)
     private var selectedProviderID = ""
-    @AppStorage("takeScreenContext") private var takeScreenContext = false
     @AppStorage("includeSelectedContent") private var includeSelectedContent = false
     @State private var promptIsFocused = false
     @State private var isFileImporterPresented = false
@@ -245,6 +379,7 @@ struct NotchView: View {
                 }
             }
 
+            VStack(spacing: 4) {
             PromptField(
                 text: $prompt,
                 shouldFocus: isExpanded
@@ -257,12 +392,7 @@ struct NotchView: View {
                 lineLimit: 1...5,
                 textInsets: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
                 minTextHeight: 62,
-                topAccessory: draftAttachments.attachments.isEmpty ? nil : AnyView(
-                    AttachmentStrip(attachments: draftAttachments.attachments) {
-                        draftAttachments.remove($0)
-                    }
-                    .padding(.top, 12)
-                ),
+                topAccessory: composerTopAccessory,
                 onPasteAttachments: { draftAttachments.acceptPastedItems($0) },
                 onPasteText: { draftAttachments.acceptPastedText($0) },
                 isDisabled: voiceMode.isActive || dictation.isNotchActive || session.isGenerating,
@@ -279,16 +409,6 @@ struct NotchView: View {
                         .disabled(session.isGenerating || dictation.isActive)
                         .help("Attach up to 5 images, PDFs, or text files (10 MB each, 25 MB total)")
                         .accessibilityLabel("Attach files")
-
-                        Button(
-                            icon: Image(systemName: "display"),
-                            label: "Entire screen",
-                            isSelected: takeScreenContext
-                        ) {
-                            takeScreenContext.toggle()
-                        }
-                        .disabled(session.isGenerating)
-                        .accessibilityHint("Include information from the screen with the prompt")
 
                         Button(
                             icon: Image(systemName: "text.quote"),
@@ -373,25 +493,9 @@ struct NotchView: View {
                 Task { await draftAttachments.add(urls: urls) }
             }
 
-            HStack(spacing: 10) {
-                Button(
-                    icon: Image(systemName: "viewfinder"),
-                    label: "Select area…",
-                    action: onSelect
-                )
-                .disabled(session.isGenerating || dictation.isActive)
-                .accessibilityHint("Enter select mode")
-
-                Spacer()
-
-                // Button(
-                //     icon: Image(systemName: voiceMode.isActive ? "waveform.fill" : "waveform"),
-                //     label: "Voice mode",
-                //     showsProgress: voiceMode.state == .connecting,
-                //     action: onToggleVoice
-                // )
-                // .disabled(dictation.isActive)
+                suggestedContextChips
             }
+
         }
         .padding(18)
     }
@@ -425,7 +529,93 @@ struct NotchView: View {
             prompt = ""
             draftAttachments.removeAll()
         }
-        onSubmitPrompt(submittedPrompt, insertMode, attachments)
+        onSubmitPrompt(
+            submittedPrompt,
+            insertMode,
+            attachments,
+            session.selectedScreenContextTargets
+        )
+    }
+
+    private var composerTopAccessory: AnyView? {
+        let hasContext = !session.selectedScreenContextTargets.isEmpty
+        let hasFiles = !draftAttachments.attachments.isEmpty
+        guard hasContext || hasFiles else { return nil }
+
+        return AnyView(
+            VStack(spacing: 4) {
+                if hasContext {
+                    attachedContextChips
+                }
+                if hasFiles {
+                    AttachmentStrip(attachments: draftAttachments.attachments) {
+                        draftAttachments.remove($0)
+                    }
+                }
+            }
+            .padding(.top, 6)
+        )
+    }
+
+    private var attachedContextChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(session.selectedScreenContextTargets) { target in
+                    ScreenContextChip(target: target, isAttached: true) {
+                        session.toggleScreenContextTarget(target)
+                    } onHoverChange: { _ in
+                        onHoverScreenContextTarget(nil)
+                    }
+                    .disabled(session.isGenerating)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, ScreenContextChipLayout.focusHaloClearance)
+        }
+    }
+
+    private var suggestedContextChips: some View {
+        let suggestions = session.screenContextTargets.filter {
+            !session.selectedScreenContextTargetIDs.contains($0.id)
+        }
+        let entireScreen = suggestions.first { $0.kind == .entireScreen }
+        let windows = suggestions.filter { $0.kind != .entireScreen }
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if let entireScreen {
+                    ScreenContextChip(target: entireScreen, isAttached: false) {
+                        onHoverScreenContextTarget(nil)
+                        session.toggleScreenContextTarget(entireScreen)
+                    } onHoverChange: { hovering in
+                        onHoverScreenContextTarget(hovering ? entireScreen : nil)
+                    }
+                    .disabled(session.isGenerating)
+                }
+
+                ScreenContextActionChip(
+                    iconName: "viewfinder",
+                    label: "Select area…"
+                ) {
+                    onHoverScreenContextTarget(nil)
+                    onSelect()
+                }
+                .disabled(session.isGenerating || dictation.isActive)
+                .accessibilityHint("Enter select mode")
+
+                ForEach(windows) { target in
+                    ScreenContextChip(target: target, isAttached: false) {
+                        onHoverScreenContextTarget(nil)
+                        session.toggleScreenContextTarget(target)
+                    } onHoverChange: { hovering in
+                        onHoverScreenContextTarget(hovering ? target : nil)
+                    }
+                    .disabled(session.isGenerating)
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, ScreenContextChipLayout.focusHaloClearance)
+        }
     }
 
     private func showSettings() {

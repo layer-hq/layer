@@ -104,7 +104,7 @@ struct OpenAIClient: ChatResponseStreaming {
             "input": ModelContextPayload.chatInput(
                 prompt: chatRequest.prompt,
                 selectedContent: chatRequest.selectedContent,
-                screenAttachment: chatRequest.screenAttachment,
+                screenAttachments: chatRequest.screenAttachments,
                 attachments: chatRequest.attachments
             ),
             "stream": true,

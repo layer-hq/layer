@@ -455,7 +455,10 @@ private struct ChatMessageRow: View, Equatable {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                if let attachment = message.screenAttachment {
+                ForEach(
+                    Array(message.screenAttachments.enumerated()),
+                    id: \.offset
+                ) { _, attachment in
                     ScreenAttachmentPreview(imageData: attachment.imageData)
                 }
 

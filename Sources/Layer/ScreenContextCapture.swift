@@ -38,11 +38,133 @@ struct ScreenAttachment: Equatable, Sendable {
     }
 }
 
+struct ScreenContextTarget: Identifiable, Equatable, Hashable, Sendable {
+    enum Kind: Equatable, Hashable, Sendable {
+        case entireScreen
+        case applicationWindow(processID: pid_t, windowID: CGWindowID)
+    }
+
+    let id: String
+    let label: String
+    let kind: Kind
+
+    static let entireScreen = ScreenContextTarget(
+        id: "entire-screen",
+        label: "Entire screen",
+        kind: .entireScreen
+    )
+
+    static func applicationWindow(
+        processID: pid_t,
+        windowID: CGWindowID,
+        label: String
+    ) -> ScreenContextTarget {
+        ScreenContextTarget(
+            id: "application-\(processID)-window-\(windowID)",
+            label: label,
+            kind: .applicationWindow(processID: processID, windowID: windowID)
+        )
+    }
+
+    @MainActor
+    static func visibleWindows() -> [ScreenContextTarget] {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return []
+        }
+
+        let ownProcessID = ProcessInfo.processInfo.processIdentifier
+        let descriptors = windows.compactMap { window -> ScreenContextWindowDescriptor? in
+            guard let processNumber = window[kCGWindowOwnerPID as String] as? NSNumber,
+                  let windowNumber = window[kCGWindowNumber as String] as? NSNumber,
+                  let layer = window[kCGWindowLayer as String] as? NSNumber,
+                  layer.intValue == 0 else {
+                return nil
+            }
+
+            let processID = pid_t(processNumber.int32Value)
+            guard processID != ownProcessID,
+                  let application = NSRunningApplication(processIdentifier: processID),
+                  application.activationPolicy == .regular,
+                  let applicationName = application.localizedName,
+                  !applicationName.isEmpty,
+                  let bounds = window[kCGWindowBounds as String] as? [String: NSNumber],
+                  let width = bounds["Width"]?.doubleValue,
+                  let height = bounds["Height"]?.doubleValue,
+                  width >= 100,
+                  height >= 80 else {
+                return nil
+            }
+            return ScreenContextWindowDescriptor(
+                processID: processID,
+                windowID: CGWindowID(windowNumber.uint32Value),
+                applicationName: applicationName
+            )
+        }
+        return targets(from: descriptors)
+    }
+
+    static func targets(
+        from windows: [ScreenContextWindowDescriptor]
+    ) -> [ScreenContextTarget] {
+        let windowCounts = Dictionary(grouping: windows, by: \.processID)
+            .mapValues(\.count)
+        var ordinals: [pid_t: Int] = [:]
+
+        return windows.map { window in
+            let ordinal = ordinals[window.processID, default: 0] + 1
+            ordinals[window.processID] = ordinal
+            let label = windowCounts[window.processID] == 1
+                ? window.applicationName
+                : "\(window.applicationName) \(ordinal)"
+            return .applicationWindow(
+                processID: window.processID,
+                windowID: window.windowID,
+                label: label
+            )
+        }
+    }
+}
+
+struct ScreenContextWindowDescriptor: Equatable, Sendable {
+    let processID: pid_t
+    let windowID: CGWindowID
+    let applicationName: String
+}
+
+enum ScreenContextWindowGeometry {
+    static func appKitFrame(
+        fromQuartzFrame frame: CGRect,
+        primaryDisplayMaxY: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: frame.minX,
+            y: primaryDisplayMaxY - frame.maxY,
+            width: frame.width,
+            height: frame.height
+        )
+    }
+}
+
 struct ScreenContextOutcome: Equatable, Sendable {
-    let attachment: ScreenAttachment?
+    let attachments: [ScreenAttachment]
     let notice: Notice?
 
-    static let notRequested = ScreenContextOutcome(attachment: nil, notice: nil)
+    var attachment: ScreenAttachment? { attachments.first }
+
+    init(attachments: [ScreenAttachment], notice: Notice?) {
+        self.attachments = attachments
+        self.notice = notice
+    }
+
+    init(attachment: ScreenAttachment?, notice: Notice?) {
+        attachments = attachment.map { [$0] } ?? []
+        self.notice = notice
+    }
+
+    static let notRequested = ScreenContextOutcome(attachments: [], notice: nil)
 }
 
 extension Notice {
@@ -58,6 +180,7 @@ extension Notice {
 enum ScreenContextCaptureError: LocalizedError {
     case permissionDenied
     case displayUnavailable
+    case targetUnavailable
     case captureFailed
     case encodingFailed
 
@@ -67,6 +190,8 @@ enum ScreenContextCaptureError: LocalizedError {
             return "Screen context was not attached. Enable Layer in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Layer."
         case .displayUnavailable:
             return "Layer could not identify the active display."
+        case .targetUnavailable:
+            return "Layer could not capture the selected Screen context."
         case .captureFailed:
             return "Layer could not capture the active display."
         case .encodingFailed:
@@ -78,6 +203,14 @@ enum ScreenContextCaptureError: LocalizedError {
 @MainActor
 protocol ScreenContextCapturing {
     func captureDisplay(id: CGDirectDisplayID?) async throws -> ScreenAttachment
+}
+
+@MainActor
+protocol ApplicationScreenContextCapturing: ScreenContextCapturing {
+    func captureWindow(
+        id windowID: CGWindowID,
+        processID: pid_t
+    ) async throws -> ScreenAttachment
 }
 
 @MainActor
@@ -108,6 +241,46 @@ final class ScreenContextAcquisition {
             )
         }
     }
+
+    func acquire(
+        targets: [ScreenContextTarget],
+        displayID: CGDirectDisplayID? = nil
+    ) async -> ScreenContextOutcome {
+        guard !targets.isEmpty else { return .notRequested }
+
+        var attachments: [ScreenAttachment] = []
+        var firstError: Error?
+        for target in targets {
+            do {
+                switch target.kind {
+                case .entireScreen:
+                    attachments.append(
+                        try await capture.captureDisplay(
+                            id: displayID ?? NSScreen.directDisplayIDUnderPointer
+                        )
+                    )
+                case .applicationWindow(let processID, let windowID):
+                    guard let applicationCapture = capture
+                            as? any ApplicationScreenContextCapturing else {
+                        throw ScreenContextCaptureError.targetUnavailable
+                    }
+                    attachments.append(
+                        try await applicationCapture.captureWindow(
+                            id: windowID,
+                            processID: processID
+                        )
+                    )
+                }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+
+        return ScreenContextOutcome(
+            attachments: attachments,
+            notice: firstError.map(Notice.init(screenContextFailure:))
+        )
+    }
 }
 
 enum ScreenCaptureTarget {
@@ -121,7 +294,7 @@ enum ScreenCaptureTarget {
 }
 
 @MainActor
-struct SystemScreenContextCapture: ScreenContextCapturing {
+struct SystemScreenContextCapture: ApplicationScreenContextCapturing {
     private static let maximumDimension = 2_560
     private static var didRequestAccessThisLaunch = false
 
@@ -144,6 +317,36 @@ struct SystemScreenContextCapture: ScreenContextCapturing {
             throw ScreenContextCaptureError.displayUnavailable
         }
         return sources
+    }
+
+    func captureWindow(
+        id windowID: CGWindowID,
+        processID: pid_t
+    ) async throws -> ScreenAttachment {
+        try ensureAccess()
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: true
+        )
+        guard let window = content.windows.first(where: { window in
+            window.windowID == windowID
+                && window.owningApplication?.processID == processID
+                && window.isOnScreen
+        }) else {
+            throw ScreenContextCaptureError.targetUnavailable
+        }
+
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let configuration = SCStreamConfiguration()
+        configuration.width = max(1, Int(window.frame.width * 2))
+        configuration.height = max(1, Int(window.frame.height * 2))
+        configuration.showsCursor = false
+
+        let capturedImage = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: configuration
+        )
+        return try Self.makeAttachment(from: capturedImage)
     }
 
     private func ensureAccess() throws {
