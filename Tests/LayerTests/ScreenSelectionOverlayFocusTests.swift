@@ -9,6 +9,23 @@ import UniformTypeIdentifiers
 @MainActor
 struct ScreenSelectionOverlayFocusTests {
     @Test
+    func promptAttachmentDropConsumesFilesBeforeTheyBecomeText() {
+        let provider = NSItemProvider(
+            item: URL(fileURLWithPath: "/tmp/report.pdf") as NSURL,
+            typeIdentifier: UTType.fileURL.identifier
+        )
+        var receivedProviders: [NSItemProvider] = []
+        let handler = PromptAttachmentDropHandler {
+            receivedProviders = $0
+        }
+
+        let wasHandled = handler.handle([provider])
+
+        #expect(wasHandled)
+        #expect(receivedProviders.count == 1)
+    }
+
+    @Test
     func screenContextChipLayoutStaysCompactAndLeavesRoomForFocus() {
         #expect(ScreenContextChipLayout.focusHaloClearance >= 4)
         #expect(ScreenContextChipLayout.maximumLabelWidth <= 140)

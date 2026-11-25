@@ -583,53 +583,89 @@ struct AttachmentStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: 6) {
-                        attachmentName(attachment)
-
-                        SwiftUI.Button {
-                            onRemove(attachment)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Remove \(attachment.name)")
-                        .accessibilityLabel("Remove \(attachment.name)")
+                    AttachmentChip(attachment: attachment) {
+                        onRemove(attachment)
                     }
-                    .padding(.trailing, 7)
-                    .background(.thinMaterial, in: Capsule())
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, ScreenContextChipLayout.focusHaloClearance)
         }
         .frame(maxWidth: .infinity)
     }
+}
 
-    @ViewBuilder
-    private func attachmentName(_ attachment: ChatAttachment) -> some View {
-        if let sourceURL = attachment.sourceURL,
-           FileManager.default.fileExists(atPath: sourceURL.path) {
-            SwiftUI.Button {
-                NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
-            } label: {
-                filename(attachment.name)
+private struct AttachmentChip: View {
+    let attachment: ChatAttachment
+    let onRemove: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        SwiftUI.Button(action: onRemove) {
+            HStack(spacing: 7) {
+                ZStack {
+                    Image(systemName: attachmentIconName)
+                        .font(.system(size: 12))
+                        .opacity(isHovering ? 0 : 1)
+
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(isHovering ? 1 : 0)
+                }
+                .frame(width: 14, height: 14)
+
+                Text(attachment.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(
+                        maxWidth: ScreenContextChipLayout.maximumLabelWidth,
+                        alignment: .leading
+                    )
             }
-            .buttonStyle(.plain)
-            .help("Show \(attachment.name) in Finder")
-            .accessibilityLabel("Show \(attachment.name) in Finder")
-        } else {
-            filename(attachment.name)
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(
+                Color.accentColor.opacity(isHovering ? 0.32 : 0.2),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .arrowCursor()
+        .animation(.easeOut(duration: 0.1), value: isHovering)
+        .help("Remove \(attachment.name)")
+        .accessibilityLabel("Remove \(attachment.name)")
+        .contextMenu {
+            if canRevealInFinder {
+                SwiftUI.Button("Show in Finder") {
+                    revealInFinder()
+                }
+            }
         }
     }
 
-    private func filename(_ name: String) -> some View {
-        Text(name)
-            .font(.caption)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .frame(maxWidth: 180, alignment: .leading)
-            .contentShape(Rectangle())
-            .padding(.vertical, 5)
-            .padding(.leading, 10)
+    private var attachmentIconName: String {
+        switch attachment.kind {
+        case .image:
+            return "photo"
+        case .document:
+            return "doc.text"
+        }
+    }
+
+    private var canRevealInFinder: Bool {
+        guard let sourceURL = attachment.sourceURL else { return false }
+        return FileManager.default.fileExists(atPath: sourceURL.path)
+    }
+
+    private func revealInFinder() {
+        guard let sourceURL = attachment.sourceURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
     }
 }

@@ -3,6 +3,28 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct PromptAttachmentDropHandler {
+    let onPasteAttachments: (([NSItemProvider]) -> Void)?
+
+    func handle(_ providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty, let onPasteAttachments else { return false }
+        onPasteAttachments(providers)
+        return true
+    }
+}
+
+private struct PromptAttachmentDropModifier: ViewModifier {
+    let handler: PromptAttachmentDropHandler
+
+    func body(content: Content) -> some View {
+        content.onDrop(
+            of: [UTType.fileURL.identifier, UTType.image.identifier],
+            isTargeted: nil,
+            perform: handler.handle
+        )
+    }
+}
+
 struct PromptField<Accessory: View>: View {
     @Binding var text: String
 
@@ -59,6 +81,13 @@ struct PromptField<Accessory: View>: View {
                 .onPasteCommand(of: [.fileURL, .image]) { providers in
                     onPasteAttachments?(providers)
                 }
+                .modifier(
+                    PromptAttachmentDropModifier(
+                        handler: PromptAttachmentDropHandler(
+                            onPasteAttachments: onPasteAttachments
+                        )
+                    )
+                )
                 .accessibilityLabel(placeholder)
 
             accessory
